@@ -396,7 +396,7 @@ def get_available_slots(appointment_date: date):
     conn.close()
     return all_slots, "เปิดทำการ"
 
-# ========== หน้าจองคิว (มีระบบกันจองซ้ำ) ==========
+# ========== หน้าจองคิว ==========
 def show_booking_form():
     st.markdown("""<div class="hero-banner">
         <h1>🦷 ระบบจองคิวทันตกรรม</h1>
@@ -456,7 +456,6 @@ def show_booking_form():
             st.error("❌ เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น")
             return
 
-        # ตรวจสอบ Blacklist
         if check_blacklist(id_card=id_card.strip()):
             st.error("⚠️ บัญชีนี้ถูกระงับสิทธิ์ชั่วคราวเนื่องจากไม่มาตามเวลานัดหมาย กรุณาติดต่อคลินิก")
             return
@@ -470,7 +469,8 @@ def show_booking_form():
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         try:
-            # ป้องกันการจองซ้ำ
+            # 🔒 ตรวจสอบว่ามีนัดที่ยังไม่ได้รับบริการค้างอยู่หรือไม่ (เฉพาะ pending หรือ confirmed)
+            # ถ้ามีสถานะ completed หรือ cancelled แล้ว จะผ่านจุดนี้และจองรอบใหม่ได้ทันที
             c.execute('''
                 SELECT a.appointment_date, a.appointment_time, a.service_type, a.status
                 FROM appointments a
@@ -493,7 +493,7 @@ def show_booking_form():
                 st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{exist_srv}** ในวันที่ **{th_date_str}** ช่วงเวลา **{exist_time} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเลื่อนหรือยกเลิกกรุณาติดต่อคลินิก)*")
                 return
 
-            # ป้องกันการแย่งกดคิวสุดท้ายพร้อมกัน
+            # Concurrency Check: ตรวจสอบความจุของ Slot อีกรอบก่อนเซฟ
             c.execute('''
                 SELECT max_patients FROM daily_schedule 
                 WHERE schedule_date = ? AND (start_time || ' - ' || end_time) = ?
@@ -632,7 +632,7 @@ def show_admin_dashboard():
     )
     conn = sqlite3.connect(DB_PATH)
 
-    # 1. ภาพรวมสถิติ
+    # 1. ภาพรวมสถิติ (เพิ่มปุ่มด่วนสำหรับกดยืนยันรับบริการแล้ว)
     if menu == "📊 ภาพรวมสถิติ":
         today = date.today().strftime('%Y-%m-%d')
         col1, col2, col3, col4 = st.columns(4)
@@ -652,14 +652,45 @@ def show_admin_dashboard():
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 ตารางนัดหมายประจำวันนี้")
         df_today = pd.read_sql_query('''
-            SELECT a.appointment_time as ช่วงเวลา, p.full_name as ชื่อผู้ป่วย, a.service_type as บริการ, 
-                   a.status as สถานะ, p.phone as เบอร์โทรศัพท์, a.notes as หมายเหตุ
+            SELECT a.id as รหัสนัด, a.appointment_time as ช่วงเวลา, p.full_name as ชื่อผู้ป่วย, a.service_type as บริการ, 
+                   CASE 
+                       WHEN a.status = 'pending' THEN '🟡 รอยืนยัน'
+                       WHEN a.status = 'confirmed' THEN '🟢 ยืนยันแล้ว'
+                       WHEN a.status = 'completed' THEN '✅ รับบริการแล้ว'
+                       WHEN a.status = 'no_show' THEN '🔴 ไม่มาตามนัด'
+                       ELSE a.status 
+                   END as สถานะ,
+                   p.phone as เบอร์โทรศัพท์, a.notes as หมายเหตุ
             FROM appointments a JOIN patients p ON a.patient_id = p.id
             WHERE a.appointment_date = ? ORDER BY a.appointment_time
         ''', conn, params=(today,))
         
         if not df_today.empty:
             st.dataframe(df_today, use_container_width=True)
+            
+            # ⚡ ปุ่มด่วนสำหรับกดยืนยันว่ารับบริการเสร็จแล้ว (ปลดล็อกให้คนไข้จองรอบต่อไปได้ทันที)
+            st.markdown("---")
+            st.markdown("##### ⚡ เช็คชื่อผู้เข้ารับบริการ (ปลดล็อกให้คนไข้จองรอบใหม่ได้ทันที)")
+            df_active_today = pd.read_sql_query('''
+                SELECT a.id, a.appointment_time, p.full_name, a.service_type
+                FROM appointments a JOIN patients p ON a.patient_id = p.id
+                WHERE a.appointment_date = ? AND a.status IN ('pending', 'confirmed')
+                ORDER BY a.appointment_time ASC
+            ''', conn, params=(today,))
+            
+            if not df_active_today.empty:
+                col_act1, col_act2 = st.columns([3, 1])
+                active_opts = {row['id']: f"[{row['appointment_time']} น.] {row['full_name']} - {row['service_type']}" for _, row in df_active_today.iterrows()}
+                selected_done_id = col_act1.selectbox("เลือกคนไข้ที่รับการรักษาเสร็จเรียบร้อยแล้ว", options=list(active_opts.keys()), format_func=lambda x: active_opts[x])
+                col_act2.markdown("### ")
+                if col_act2.button("✅ ยืนยันรับบริการแล้ว", type="primary", use_container_width=True):
+                    c = conn.cursor()
+                    c.execute("UPDATE appointments SET status = 'completed' WHERE id = ?", (selected_done_id,))
+                    conn.commit()
+                    st.success("บันทึกเข้ารับบริการสำเร็จ! คนไข้รายนี้สามารถจองคิวรับบริการครั้งต่อไปได้แล้ว")
+                    st.rerun()
+            else:
+                st.info("คิวนัดหมายของวันนี้ได้รับการบันทึกครบถ้วนแล้ว")
         else:
             st.info("ไม่มีรายการนัดหมายในวันนี้")
 
@@ -682,15 +713,15 @@ def show_admin_dashboard():
         c1, c2, c3 = st.columns([1, 2, 1])
         appt_id = c1.number_input("รหัสนัดหมาย (ID)", min_value=1, step=1)
         new_status = c2.selectbox("สถานะใหม่", [
-            ("pending", "รอยืนยัน (Pending)"),
+            ("completed", "เข้ารับบริการแล้ว (Completed) - ปลดล็อกให้จองใหม่ได้"),
             ("confirmed", "ยืนยันแล้ว (Confirmed)"),
-            ("completed", "เข้ารับบริการแล้ว (Completed)"),
+            ("pending", "รอยืนยัน (Pending)"),
             ("no_show", "ไม่มาตามนัด (No-Show)"),
             ("cancelled", "ยกเลิกนัด (Cancelled)")
         ], format_func=lambda x: x[1])
         
         c3.markdown("### ")
-        if c3.button("💾 บันทึก", type="primary", use_container_width=True):
+        if c3.button("💾 บันทึกสถานะ", type="primary", use_container_width=True):
             target_status = new_status[0]
             if target_status == "no_show":
                 record_no_show(appt_id, reported_by=st.session_state.admin_user, notes="เจ้าหน้าที่ระบุไม่มาตามนัด")
@@ -940,10 +971,9 @@ def show_admin_dashboard():
             conn.commit()
             st.success(f"ส่งการแจ้งเตือนสำเร็จทั้งหมด {sent_count}/{len(targets)} รายการ")
 
-    # 6. จัดการ Blacklist (เพิ่มแบบฟอร์มสั่งบล็อก และฟังก์ชันปลดบล็อก)
+    # 6. จัดการ Blacklist
     elif menu == "🚫 จัดการ Blacklist":
         st.subheader("🚫 การจัดการระงับสิทธิ์การจองคิว (Blacklist)")
-        
         tab_bl1, tab_bl2 = st.tabs(["📋 รายชื่อผู้ถูกระงับสิทธิ์ & ปลดบล็อก", "➕ สั่งระงับสิทธิ์ (บล็อกผู้ป่วย)"])
         
         with tab_bl1:
@@ -977,7 +1007,6 @@ def show_admin_dashboard():
                 
         with tab_bl2:
             st.markdown("##### ➕ เพิ่มรายชื่อผู้ป่วยเข้าสู่ระบบระงับสิทธิ์")
-            # ดึงรายชื่อคนไข้ที่มีในระบบ
             patients_list = pd.read_sql_query("SELECT id, full_name, id_card, phone FROM patients ORDER BY full_name ASC", conn)
             
             with st.form("form_manual_blacklist"):
