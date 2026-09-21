@@ -396,7 +396,7 @@ def get_available_slots(appointment_date: date):
     conn.close()
     return all_slots, "เปิดทำการ"
 
-# ========== หน้าจองคิว (Real-time โชว์ Slot ทันที) ==========
+# ========== หน้าจองคิว (มีระบบกันจองซ้ำซ้อน 100%) ==========
 def show_booking_form():
     st.markdown("""<div class="hero-banner">
         <h1>🦷 ระบบจองคิวทันตกรรม</h1>
@@ -456,6 +456,7 @@ def show_booking_form():
             st.error("❌ เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น")
             return
 
+        # ตรวจสอบ Blacklist
         if check_blacklist(id_card=id_card.strip()):
             st.error("⚠️ บัญชีนี้ถูกระงับสิทธิ์ชั่วคราวเนื่องจากไม่มาตามเวลานัดหมาย กรุณาติดต่อคลินิก")
             return
@@ -464,10 +465,53 @@ def show_booking_form():
             return
 
         clean_time_label = selected_time_slot.split(" น.")[0]
+        date_str = appointment_date.strftime('%Y-%m-%d')
 
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         try:
+            # 🔒 1. ป้องกันการจองซ้ำ: ตรวจสอบว่าเลขบัตร ปชช. นี้ มีคิวที่ยังค้างอยู่ในระบบหรือไม่ (ตั้งแต่วันนี้เป็นต้นไป)
+            c.execute('''
+                SELECT a.appointment_date, a.appointment_time, a.service_type, a.status
+                FROM appointments a
+                JOIN patients p ON a.patient_id = p.id
+                WHERE p.id_card = ? 
+                  AND a.status IN ('pending', 'confirmed') 
+                  AND a.appointment_date >= DATE('now')
+            ''', (id_card.strip(),))
+            active_appointment = c.fetchone()
+            
+            if active_appointment:
+                exist_date, exist_time, exist_srv, exist_stat = active_appointment
+                th_stat = "รอยืนยัน" if exist_stat == "pending" else "ยืนยันแล้ว"
+                # แปลงวันที่แสดงผลให้เข้าใจง่าย
+                try:
+                    d_obj = datetime.strptime(exist_date, '%Y-%m-%d')
+                    th_date_str = f"{d_obj.strftime('%d/%m/')}{d_obj.year + 543}"
+                except:
+                    th_date_str = exist_date
+
+                st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีรายการนัดหมายบริการ **{exist_srv}** ในวันที่ **{th_date_str}** ช่วงเวลา **{exist_time} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเปลี่ยนวันหรือยกเลิกกรุณาติดต่อคลินิก)*")
+                return
+
+            # 🔒 2. Concurrency Check: ตรวจสอบความจุของ Slot อีกรอบก่อนเซฟจริง เผื่อมีคนแย่งกด
+            c.execute('''
+                SELECT max_patients FROM daily_schedule 
+                WHERE schedule_date = ? AND (start_time || ' - ' || end_time) = ?
+            ''', (date_str, clean_time_label))
+            sched = c.fetchone()
+            if sched:
+                max_cap = sched[0]
+                c.execute('''
+                    SELECT COUNT(*) FROM appointments 
+                    WHERE appointment_date = ? AND appointment_time = ? AND status IN ('pending', 'confirmed')
+                ''', (date_str, clean_time_label))
+                curr_booked = c.fetchone()[0]
+                if curr_booked >= max_cap:
+                    st.error("❌ ขออภัย ช่วงเวลานี้เพิ่งมีผู้จองเต็ม กรุณาเลือกช่วงเวลาอื่น")
+                    return
+
+            # บันทึกข้อมูลคนไข้
             c.execute("SELECT id FROM patients WHERE id_card = ?", (id_card.strip(),))
             patient = c.fetchone()
             if patient:
@@ -483,11 +527,11 @@ def show_booking_form():
             c.execute('''
                 INSERT INTO appointments (patient_id, service_type, appointment_date, appointment_time, status, token, notes)
                 VALUES (?, ?, ?, ?, 'pending', ?, ?)
-            ''', (patient_id, service_name, appointment_date.strftime('%Y-%m-%d'), clean_time_label, token, notes))
+            ''', (patient_id, service_name, date_str, clean_time_label, token, notes))
             appointment_id = c.lastrowid
             conn.commit()
 
-            # URL จริงของระบบ ศบส.65
+            # URL จริงของ ศบส.65
             base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
             confirmation_url = f"{base_url}/?confirm={token}"
             
@@ -806,7 +850,7 @@ def show_admin_dashboard():
                     st.success(f"กำหนดให้วันที่ {cl_date.strftime('%d/%m/%Y')} ปิดทำการทั้งวันเรียบร้อย")
                     st.rerun()
 
-        # 4. ดูรายการและลบ Slot
+        # 4. ดูรายการและล้าง Slot
         with tab_slot4:
             st.markdown("##### 🗓️ ลบ Slot ตามช่วงวันที่ (แนะนำ)")
             col_del_r1, col_del_r2, col_del_r3 = st.columns([2, 2, 2])
