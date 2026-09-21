@@ -351,7 +351,7 @@ def record_no_show(appointment_id, reported_by="system", notes=""):
         )
     return True
 
-# ========== ดึง Slot ที่เปิดรับบริการในแต่ละวัน ==========
+# ========== คำนวณช่วงเวลาว่างของวันที่เลือก ==========
 def get_available_slots(appointment_date: date):
     conn = sqlite3.connect(DB_PATH)
     date_str = appointment_date.strftime('%Y-%m-%d')
@@ -396,7 +396,7 @@ def get_available_slots(appointment_date: date):
     conn.close()
     return all_slots, "เปิดทำการ"
 
-# ========== หน้าจองคิว (มีระบบกันจองซ้ำซ้อน 100%) ==========
+# ========== หน้าจองคิว (มีระบบกันจองซ้ำ) ==========
 def show_booking_form():
     st.markdown("""<div class="hero-banner">
         <h1>🦷 ระบบจองคิวทันตกรรม</h1>
@@ -470,7 +470,7 @@ def show_booking_form():
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         try:
-            # 🔒 1. ป้องกันการจองซ้ำ: ตรวจสอบว่าเลขบัตร ปชช. นี้ มีคิวที่ยังค้างอยู่ในระบบหรือไม่ (ตั้งแต่วันนี้เป็นต้นไป)
+            # ป้องกันการจองซ้ำ
             c.execute('''
                 SELECT a.appointment_date, a.appointment_time, a.service_type, a.status
                 FROM appointments a
@@ -484,17 +484,16 @@ def show_booking_form():
             if active_appointment:
                 exist_date, exist_time, exist_srv, exist_stat = active_appointment
                 th_stat = "รอยืนยัน" if exist_stat == "pending" else "ยืนยันแล้ว"
-                # แปลงวันที่แสดงผลให้เข้าใจง่าย
                 try:
                     d_obj = datetime.strptime(exist_date, '%Y-%m-%d')
                     th_date_str = f"{d_obj.strftime('%d/%m/')}{d_obj.year + 543}"
                 except:
                     th_date_str = exist_date
 
-                st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีรายการนัดหมายบริการ **{exist_srv}** ในวันที่ **{th_date_str}** ช่วงเวลา **{exist_time} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเปลี่ยนวันหรือยกเลิกกรุณาติดต่อคลินิก)*")
+                st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{exist_srv}** ในวันที่ **{th_date_str}** ช่วงเวลา **{exist_time} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเลื่อนหรือยกเลิกกรุณาติดต่อคลินิก)*")
                 return
 
-            # 🔒 2. Concurrency Check: ตรวจสอบความจุของ Slot อีกรอบก่อนเซฟจริง เผื่อมีคนแย่งกด
+            # ป้องกันการแย่งกดคิวสุดท้ายพร้อมกัน
             c.execute('''
                 SELECT max_patients FROM daily_schedule 
                 WHERE schedule_date = ? AND (start_time || ' - ' || end_time) = ?
@@ -511,7 +510,6 @@ def show_booking_form():
                     st.error("❌ ขออภัย ช่วงเวลานี้เพิ่งมีผู้จองเต็ม กรุณาเลือกช่วงเวลาอื่น")
                     return
 
-            # บันทึกข้อมูลคนไข้
             c.execute("SELECT id FROM patients WHERE id_card = ?", (id_card.strip(),))
             patient = c.fetchone()
             if patient:
@@ -531,7 +529,6 @@ def show_booking_form():
             appointment_id = c.lastrowid
             conn.commit()
 
-            # URL จริงของ ศบส.65
             base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
             confirmation_url = f"{base_url}/?confirm={token}"
             
@@ -943,20 +940,81 @@ def show_admin_dashboard():
             conn.commit()
             st.success(f"ส่งการแจ้งเตือนสำเร็จทั้งหมด {sent_count}/{len(targets)} รายการ")
 
-    # 6. Blacklist
+    # 6. จัดการ Blacklist (เพิ่มแบบฟอร์มสั่งบล็อก และฟังก์ชันปลดบล็อก)
     elif menu == "🚫 จัดการ Blacklist":
-        st.subheader("🚫 รายชื่อผู้ถูกระงับสิทธิ์การจอง")
-        df_bl = pd.read_sql_query('''
-            SELECT b.id as รหัส, p.full_name as ชื่อ, b.id_card as เลขบัตร, b.phone as เบอร์โทร, 
-                   b.reason as สาเหตุ, b.no_show_count as ครั้งที่ผิดนัด, b.blacklisted_until as ระงับถึงวันที่,
-                   CASE WHEN DATE(b.blacklisted_until) < DATE('now') THEN 'หมดอายุ' ELSE 'กำลังลงโทษ' END as สถานะ
-            FROM blacklist b JOIN patients p ON b.patient_id = p.id
-            ORDER BY b.blacklisted_until DESC
-        ''', conn)
-        if not df_bl.empty:
-            st.dataframe(df_bl, use_container_width=True)
-        else:
-            st.info("ไม่มีรายชื่อผู้ถูกระงับสิทธิ์ในขณะนี้")
+        st.subheader("🚫 การจัดการระงับสิทธิ์การจองคิว (Blacklist)")
+        
+        tab_bl1, tab_bl2 = st.tabs(["📋 รายชื่อผู้ถูกระงับสิทธิ์ & ปลดบล็อก", "➕ สั่งระงับสิทธิ์ (บล็อกผู้ป่วย)"])
+        
+        with tab_bl1:
+            df_bl = pd.read_sql_query('''
+                SELECT b.id as รหัส, p.full_name as ชื่อผู้ป่วย, b.id_card as เลขบัตรประชาชน, b.phone as เบอร์โทร, 
+                       b.reason as สาเหตุ, b.no_show_count as ครั้งที่ผิดนัด, b.blacklisted_until as ระงับถึงวันที่,
+                       b.created_by as ผู้บันทึก,
+                       CASE WHEN DATE(b.blacklisted_until) < DATE('now') THEN '⚪ หมดอายุ' ELSE '🔴 กำลังระงับสิทธิ์' END as สถานะ
+                FROM blacklist b JOIN patients p ON b.patient_id = p.id
+                ORDER BY b.blacklisted_until DESC
+            ''', conn)
+            
+            if not df_bl.empty:
+                st.dataframe(df_bl, use_container_width=True)
+                st.markdown("---")
+                st.markdown("##### 🔓 ปลดบล็อกผู้ป่วย (คืนสิทธิ์การจอง)")
+                col_ub1, col_ub2 = st.columns([3, 1])
+                unblock_id = col_ub1.number_input("ระบุ 'รหัส (ID)' ในตารางที่ต้องการปลดบล็อก", min_value=1, step=1)
+                col_ub2.markdown("### ")
+                if col_ub2.button("🔓 ปลดบล็อกทันที", type="primary", use_container_width=True):
+                    c = conn.cursor()
+                    c.execute("DELETE FROM blacklist WHERE id = ?", (unblock_id,))
+                    if c.rowcount > 0:
+                        conn.commit()
+                        st.success(f"✅ ปลดบล็อกรหัส {unblock_id} เรียบร้อยแล้ว")
+                        st.rerun()
+                    else:
+                        st.warning(f"ไม่พบข้อมูลรหัส {unblock_id}")
+            else:
+                st.info("ไม่มีรายชื่อผู้ถูกระงับสิทธิ์ในขณะนี้")
+                
+        with tab_bl2:
+            st.markdown("##### ➕ เพิ่มรายชื่อผู้ป่วยเข้าสู่ระบบระงับสิทธิ์")
+            # ดึงรายชื่อคนไข้ที่มีในระบบ
+            patients_list = pd.read_sql_query("SELECT id, full_name, id_card, phone FROM patients ORDER BY full_name ASC", conn)
+            
+            with st.form("form_manual_blacklist"):
+                if not patients_list.empty:
+                    patient_options = {row['id']: f"{row['full_name']} (บัตร: {row['id_card']}, โทร: {row['phone']})" for _, row in patients_list.iterrows()}
+                    selected_p_id = st.selectbox("เลือกผู้ป่วยจากประวัติในระบบ", options=list(patient_options.keys()), format_func=lambda x: patient_options[x])
+                else:
+                    st.warning("ยังไม่มีข้อมูลผู้ป่วยในระบบ")
+                    selected_p_id = None
+                
+                col_b1, col_b2 = st.columns([2, 1])
+                bl_reason = col_b1.text_input("ระบุสาเหตุการระงับสิทธิ์ *", placeholder="เช่น ไม่มาตามนัดหลายครั้ง, ก่อกวนระบบ, ขอยกเลิกสิทธิ์ชั่วคราว")
+                penalty_days = col_b2.selectbox("ระยะเวลาที่ต้องการระงับสิทธิ์", [
+                    (30, "30 วัน (1 เดือน)"),
+                    (60, "60 วัน (2 เดือน)"),
+                    (90, "90 วัน (3 เดือน)"),
+                    (180, "180 วัน (6 เดือน)"),
+                    (365, "365 วัน (1 ปี)")
+                ], format_func=lambda x: x[1])
+                
+                if st.form_submit_button("🚫 ยืนยันการสั่งระงับสิทธิ์ (บล็อก)", type="primary"):
+                    if not selected_p_id:
+                        st.error("กรุณาเลือกผู้ป่วย")
+                    elif not bl_reason.strip():
+                        st.error("กรุณาระบุสาเหตุการระงับสิทธิ์")
+                    else:
+                        success = add_to_blacklist(
+                            patient_id=selected_p_id, 
+                            reason=bl_reason.strip(), 
+                            days_penalty=penalty_days[0], 
+                            reported_by=st.session_state.admin_user
+                        )
+                        if success:
+                            st.success("✅ บันทึกระงับสิทธิ์ผู้ป่วยเรียบร้อยแล้ว")
+                            st.rerun()
+                        else:
+                            st.error("ไม่สามารถบันทึกได้ กรุณาลองใหม่อีกครั้ง")
 
     # 7. No-Show
     elif menu == "📋 ประวัติ No-Show":
