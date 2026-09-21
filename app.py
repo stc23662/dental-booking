@@ -487,7 +487,8 @@ def show_booking_form():
             appointment_id = c.lastrowid
             conn.commit()
 
-            base_url = "https://your-app.streamlit.app"
+            # URL จริงของระบบ ศบส.65
+            base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
             confirmation_url = f"{base_url}/?confirm={token}"
             
             email_body = f"""
@@ -805,7 +806,7 @@ def show_admin_dashboard():
                     st.success(f"กำหนดให้วันที่ {cl_date.strftime('%d/%m/%Y')} ปิดทำการทั้งวันเรียบร้อย")
                     st.rerun()
 
-        # 4. ดูรายการและลบ Slot (แก้ไขคำสั่งลบให้แม่นยำ 100%)
+        # 4. ดูรายการและลบ Slot
         with tab_slot4:
             st.markdown("##### 🗓️ ลบ Slot ตามช่วงวันที่ (แนะนำ)")
             col_del_r1, col_del_r2, col_del_r3 = st.columns([2, 2, 2])
