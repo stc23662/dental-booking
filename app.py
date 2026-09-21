@@ -9,65 +9,97 @@ import secrets
 
 # ========== คอนฟิกหน้าเว็บ ==========
 st.set_page_config(
-    page_title="ระบบจองคิวทันตกรรมออนไลน์",
+    page_title="ระบบจองคิวทันตกรรม ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน",
     page_icon="🦷",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ========== Custom CSS สไตล์ Medical Modern ==========
-CUSTOM_CSS = """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
-    
-    .hero-banner {
-        background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 50%, #0369a1 100%);
-        color: white;
-        padding: 2.2rem 2rem;
-        border-radius: 16px;
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 25px -5px rgba(14, 165, 233, 0.25);
-    }
-    .hero-banner h1 { margin: 0; font-size: 2rem; font-weight: 700; color: white; }
-    .hero-banner p { margin-top: 0.5rem; margin-bottom: 0; font-size: 1.05rem; opacity: 0.95; }
-
-    [data-testid="stMetric"] {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        padding: 1.25rem 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-    }
-    [data-testid="stForm"] {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        padding: 2.2rem;
-        border-radius: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
-    }
-    button[kind="primary"] {
-        background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 0.6rem 1.5rem !important;
-        font-weight: 600 !important;
-        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3) !important;
-    }
-    .clinic-card {
-        background-color: #f0f9ff;
-        border-left: 4px solid #0284c7;
-        padding: 1rem 1.25rem;
-        border-radius: 0 10px 10px 0;
-        margin: 1rem 0;
-    }
-</style>
-"""
+# ========== Custom CSS (ชิดซ้ายทั้งหมด ป้องกัน Markdown ตีความเป็น Code Block) ==========
+CUSTOM_CSS = """<style>
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
+.hero-banner {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 50%, #0369a1 100%);
+    color: white;
+    padding: 2rem;
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 25px -5px rgba(14, 165, 233, 0.25);
+}
+.hero-banner h1 { margin: 0; font-size: 1.8rem; font-weight: 700; color: white; }
+.hero-banner p { margin-top: 0.5rem; margin-bottom: 0; font-size: 1.05rem; opacity: 0.95; }
+[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    padding: 1.25rem 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+button[kind="primary"] {
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+    border: none !important;
+    border-radius: 10px !important;
+    padding: 0.6rem 1.5rem !important;
+    font-weight: 600 !important;
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3) !important;
+}
+.day-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px 8px;
+    min-height: 240px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.day-header {
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+.day-sub {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+.slot-pill-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 5px 8px;
+    margin-bottom: 6px;
+    font-size: 0.82rem;
+}
+.pill-badge {
+    background-color: #0284c7;
+    color: white;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+.day-footer {
+    text-align: center;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 8px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #1e293b;
+}
+</style>"""
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 DB_PATH = "clinic.db"
 
-# ========== ฐานข้อมูล ==========
+# ========== ฐานข้อมูลและการตรวจสอบโครงสร้าง ==========
 def init_database():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -91,7 +123,7 @@ def init_database():
             patient_id INTEGER,
             service_type TEXT NOT NULL,
             appointment_date DATE NOT NULL,
-            appointment_time TIME NOT NULL,
+            appointment_time TEXT NOT NULL,
             status TEXT DEFAULT 'pending',
             token TEXT UNIQUE,
             reminder_sent INTEGER DEFAULT 0,
@@ -101,25 +133,27 @@ def init_database():
         )
     ''')
     
-    # 3. บริการ
+    # 3. บริการ (เฉพาะ 4 รายการ)
     c.execute('''
         CREATE TABLE IF NOT EXISTS services (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            duration_minutes INTEGER DEFAULT 30,
+            name TEXT UNIQUE NOT NULL,
             is_active INTEGER DEFAULT 1
         )
     ''')
+    c.execute("DELETE FROM services")
+    target_services = [("ถอนฟัน",), ("อุดฟัน",), ("ขูดหินปูน",), ("ตรวจสุขภาพช่องปาก",)]
+    c.executemany("INSERT OR IGNORE INTO services (name) VALUES (?)", target_services)
 
-    # ตรวจสอบและปรับปรุงโครงสร้างตาราง daily_schedule เดิมอัตโนมัติ
+    # 4. daily_schedule
     c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='daily_schedule'")
     table_exists = c.fetchone()[0] > 0
     
     need_recreate = False
     if table_exists:
         c.execute("PRAGMA table_info(daily_schedule)")
-        columns = [row[1] for row in c.fetchall()]
-        if "id" not in columns:
+        cols = [r[1] for r in c.fetchall()]
+        if "id" not in cols:
             need_recreate = True
 
     if need_recreate:
@@ -131,14 +165,13 @@ def init_database():
                 is_open INTEGER DEFAULT 1,
                 start_time TIME,
                 end_time TIME,
-                slot_duration INTEGER DEFAULT 30,
                 max_patients INTEGER DEFAULT 4,
                 note TEXT
             )
         ''')
         c.execute('''
-            INSERT INTO daily_schedule (schedule_date, is_open, start_time, end_time, note)
-            SELECT schedule_date, is_open, start_time, end_time, note FROM daily_schedule_old
+            INSERT INTO daily_schedule (schedule_date, is_open, start_time, end_time, max_patients, note)
+            SELECT schedule_date, is_open, start_time, end_time, max_patients, note FROM daily_schedule_old
         ''')
         c.execute("DROP TABLE daily_schedule_old")
     else:
@@ -149,13 +182,12 @@ def init_database():
                 is_open INTEGER DEFAULT 1,
                 start_time TIME,
                 end_time TIME,
-                slot_duration INTEGER DEFAULT 30,
                 max_patients INTEGER DEFAULT 4,
                 note TEXT
             )
         ''')
 
-    # 4. Blacklist
+    # 5. Blacklist
     c.execute('''
         CREATE TABLE IF NOT EXISTS blacklist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,7 +203,7 @@ def init_database():
         )
     ''')
 
-    # 5. บันทึกประวัติ No-Show
+    # 6. ประวัติ No-Show
     c.execute('''
         CREATE TABLE IF NOT EXISTS no_show_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,19 +218,6 @@ def init_database():
             FOREIGN KEY (patient_id) REFERENCES patients (id)
         )
     ''')
-    
-    c.execute("SELECT COUNT(*) FROM services")
-    if c.fetchone()[0] == 0:
-        services = [
-            ("ตรวจฟัน", 30),
-            ("ขูดหินปูน", 45),
-            ("อุดฟัน", 30),
-            ("ถอนฟัน", 60),
-            ("ผ่าฟันคุด", 120),
-            ("รักษารากฟัน", 90),
-            ("ทำความสะอาด", 45)
-        ]
-        c.executemany("INSERT INTO services (name, duration_minutes) VALUES (?, ?)", services)
     
     conn.commit()
     conn.close()
@@ -332,14 +351,14 @@ def record_no_show(appointment_id, reported_by="system", notes=""):
         )
     return True
 
-# ========== คำนวณช่วงเวลาว่าง ==========
-def get_available_slots(appointment_date: date, service_duration: int = 30):
+# ========== ดึง Slot ที่เปิดรับบริการในแต่ละวัน ==========
+def get_available_slots(appointment_date: date):
     conn = sqlite3.connect(DB_PATH)
     date_str = appointment_date.strftime('%Y-%m-%d')
     c = conn.cursor()
     
     c.execute('''
-        SELECT is_open, start_time, end_time, slot_duration, max_patients, note 
+        SELECT is_open, start_time, end_time, max_patients, note 
         FROM daily_schedule 
         WHERE schedule_date = ?
         ORDER BY start_time ASC
@@ -351,52 +370,40 @@ def get_available_slots(appointment_date: date, service_duration: int = 30):
         return [], "คลินิกยังไม่ได้เปิดรับจองในวันนี้"
         
     if any(r[0] == 0 for r in schedule_records):
-        note = next((r[5] for r in schedule_records if r[0] == 0 and r[5]), "ปิดทำการพิเศษ")
+        note = next((r[4] for r in schedule_records if r[0] == 0 and r[4]), "ปิดทำการพิเศษ")
         conn.close()
         return [], f"ปิดทำการ ({note})"
     
     all_slots = []
-    for _, start_str, end_str, slot_dur, max_patients, _ in schedule_records:
+    for _, start_str, end_str, max_patients, _ in schedule_records:
         if not start_str or not end_str:
             continue
-        start_time = datetime.strptime(start_str, '%H:%M').time()
-        end_time = datetime.strptime(end_str, '%H:%M').time()
         
-        current = datetime.combine(date.today(), start_time)
-        end_dt = datetime.combine(date.today(), end_time)
+        slot_label = f"{start_str} - {end_str}"
+        c.execute('''
+            SELECT COUNT(*) FROM appointments 
+            WHERE appointment_date = ? AND appointment_time = ? AND status IN ('pending', 'confirmed')
+        ''', (date_str, slot_label))
+        booked_count = c.fetchone()[0]
         
-        step_minutes = slot_dur if slot_dur else 30
-        
-        while current + timedelta(minutes=service_duration) <= end_dt:
-            slot_time = current.time().strftime('%H:%M')
-            
-            c.execute('''
-                SELECT COUNT(*) FROM appointments 
-                WHERE appointment_date = ? AND appointment_time = ? AND status IN ('pending', 'confirmed')
-            ''', (date_str, slot_time))
-            booked_count = c.fetchone()[0]
-            
-            if booked_count < max_patients:
-                all_slots.append({
-                    'time': slot_time,
-                    'available': max_patients - booked_count,
-                    'total_slots': max_patients
-                })
-            current += timedelta(minutes=step_minutes)
+        if booked_count < max_patients:
+            all_slots.append({
+                'label': slot_label,
+                'available': max_patients - booked_count,
+                'total_slots': max_patients
+            })
             
     conn.close()
     return all_slots, "เปิดทำการ"
 
-# ========== หน้าจองคิว ==========
+# ========== หน้าจองคิว (Real-time โชว์ Slot ทันที) ==========
 def show_booking_form():
-    st.markdown("""
-        <div class="hero-banner">
-            <h1>🦷 จองคิวรับบริการทันตกรรม</h1>
-            <p>กรุณากรอกข้อมูลส่วนตัว เลือกหัตถการ และนัดหมายวันเวลาที่เปิดรับบริการ</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("""<div class="hero-banner">
+        <h1>🦷 ระบบจองคิวทันตกรรม</h1>
+        <p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน<br>กรุณากรอกข้อมูลส่วนตัว เลือกบริการ และนัดหมายวันเวลาที่สะดวกเข้ารับบริการ</p>
+    </div>""", unsafe_allow_html=True)
     
-    with st.form("booking_form", clear_on_submit=False):
+    with st.container(border=True):
         st.subheader("1. ข้อมูลผู้เข้ารับบริการ")
         col1, col2 = st.columns(2)
         with col1:
@@ -410,19 +417,10 @@ def show_booking_form():
         st.subheader("2. เลือกบริการและวันเวลา")
         
         conn = sqlite3.connect(DB_PATH)
-        services_df = pd.read_sql_query("SELECT id, name, duration_minutes FROM services WHERE is_active = 1", conn)
+        services_df = pd.read_sql_query("SELECT id, name FROM services WHERE is_active = 1", conn)
         conn.close()
         
-        col_srv1, col_srv2 = st.columns([2, 1])
-        with col_srv1:
-            service_name = st.selectbox("บริการที่ต้องการรับการรักษา *", services_df['name'].tolist())
-        with col_srv2:
-            service_duration = int(services_df[services_df['name'] == service_name]['duration_minutes'].iloc[0])
-            st.markdown(f"""
-                <div class="clinic-card" style="margin: 0; padding: 0.6rem 1rem;">
-                    ⏱️ <b>ระยะเวลาตรวจ:</b> {service_duration} นาที
-                </div>
-            """, unsafe_allow_html=True)
+        service_name = st.selectbox("บริการที่ต้องการรับการรักษา *", services_df['name'].tolist())
         
         col_date, col_slot = st.columns(2)
         with col_date:
@@ -430,23 +428,23 @@ def show_booking_form():
             max_date = min_date + timedelta(days=120)
             appointment_date = st.date_input("เลือกวันที่ต้องการนัดหมาย *", min_value=min_date, max_value=max_date, value=min_date + timedelta(days=1))
             
-        available_slots, status_msg = get_available_slots(appointment_date, service_duration)
+        available_slots, status_msg = get_available_slots(appointment_date)
         
         with col_slot:
             if not available_slots:
                 st.selectbox("ช่วงเวลา *", [f"⛔ {status_msg}"], disabled=True)
-                appointment_time = None
+                selected_time_slot = None
             else:
-                slot_options = [f"{slot['time']} น. (ว่าง {slot['available']}/{slot['total_slots']} ที่)" for slot in available_slots]
-                selected_slot = st.selectbox("เลือกช่วงเวลานัดหมาย *", slot_options)
-                appointment_time = selected_slot.split(" ")[0]
+                slot_options = [f"{slot['label']} น. (ว่าง {slot['available']}/{slot['total_slots']} คิว)" for slot in available_slots]
+                selected_time_slot = st.selectbox("เลือกช่วงเวลานัดหมาย *", slot_options)
 
         notes = st.text_area("หมายเหตุเพิ่มเติม / อาการเบื้องต้น / โรคประจำตัว (ถ้ามี)")
         st.markdown("<br>", unsafe_allow_html=True)
-        submitted = st.form_submit_button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
+        
+        submitted = st.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
 
     if submitted:
-        if not available_slots or not appointment_time:
+        if not available_slots or not selected_time_slot:
             st.error(f"❌ วันที่เลือกไม่สามารถจองได้: {status_msg}")
             return
             
@@ -464,6 +462,8 @@ def show_booking_form():
         if check_blacklist(phone=phone.strip()):
             st.error("⚠️ เบอร์โทรศัพท์นี้ถูกระงับสิทธิ์ชั่วคราว กรุณาติดต่อคลินิก")
             return
+
+        clean_time_label = selected_time_slot.split(" น.")[0]
 
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -483,7 +483,7 @@ def show_booking_form():
             c.execute('''
                 INSERT INTO appointments (patient_id, service_type, appointment_date, appointment_time, status, token, notes)
                 VALUES (?, ?, ?, ?, 'pending', ?, ?)
-            ''', (patient_id, service_name, appointment_date.strftime('%Y-%m-%d'), appointment_time, token, notes))
+            ''', (patient_id, service_name, appointment_date.strftime('%Y-%m-%d'), clean_time_label, token, notes))
             appointment_id = c.lastrowid
             conn.commit()
 
@@ -491,16 +491,17 @@ def show_booking_form():
             confirmation_url = f"{base_url}/?confirm={token}"
             
             email_body = f"""
-            <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+            <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
                 <div style="background: #0284c7; padding: 16px; border-radius: 8px; text-align: center; color: white;">
                     <h2 style="margin:0;">ยืนยันการนัดหมายทันตกรรม</h2>
+                    <p style="margin:5px 0 0 0; font-size: 14px;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
                 </div>
                 <p style="margin-top: 20px;">เรียนคุณ <b>{full_name}</b>,</p>
                 <p>ระบบได้รับคำขอจองคิวของท่านแล้ว รายละเอียด:</p>
                 <ul>
                     <li><b>บริการ:</b> {service_name}</li>
                     <li><b>วันที่:</b> {appointment_date.strftime('%d/%m/%Y')}</li>
-                    <li><b>เวลา:</b> {appointment_time} น.</li>
+                    <li><b>ช่วงเวลา:</b> {clean_time_label} น.</li>
                 </ul>
                 <div style="text-align: center; margin: 30px 0;">
                     <a href="{confirmation_url}" style="background-color: #16a34a; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
@@ -508,7 +509,7 @@ def show_booking_form():
                     </a>
                 </div>
                 <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">คลินิกทันตกรรม | ติดต่อสอบถาม: dental665@gmail.com</p>
+                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน | ติดต่อ: dental665@gmail.com</p>
             </div>
             """
             send_email(email.strip(), "ยืนยันการนัดหมายทันตกรรม", email_body)
@@ -531,13 +532,13 @@ def handle_confirmation():
     ''', (token,))
     appointment = c.fetchone()
     
-    st.markdown("""<div class="hero-banner"><h1>🦷 ผลการยืนยันนัดหมาย</h1></div>""", unsafe_allow_html=True)
+    st.markdown("""<div class="hero-banner"><h1>🦷 ผลการยืนยันนัดหมาย</h1><p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p></div>""", unsafe_allow_html=True)
     if appointment:
         appt_id, name, appt_date, appt_time, status = appointment
         if status == 'pending':
             c.execute("UPDATE appointments SET status = 'confirmed' WHERE id = ?", (appt_id,))
             conn.commit()
-            st.success(f"✅ **ยืนยันนัดหมายสำเร็จ!** คุณ {name} สำหรับวันที่ {appt_date} เวลา {appt_time} น.")
+            st.success(f"✅ **ยืนยันนัดหมายสำเร็จ!** คุณ {name} สำหรับวันที่ {appt_date} ช่วงเวลา {appt_time} น.")
         elif status == 'confirmed':
             st.info("ℹ️ นัดหมายนี้ได้รับการยืนยันเรียบร้อยแล้ว")
         else:
@@ -584,7 +585,7 @@ def show_admin_dashboard():
 
     menu = st.sidebar.radio(
         "เมนูจัดการระบบ",
-        ["📊 ภาพรวมสถิติ", "📅 จัดการคิวนัดหมาย", "🗓️ จัดการ Slot และปฏิทินรายเดือน", "👥 ทะเบียนผู้ป่วย", 
+        ["📊 ภาพรวมสถิติ", "📅 จัดการคิวนัดหมาย", "🗓️ จัดการ Slot และปฏิทิน", "👥 ทะเบียนผู้ป่วย", 
          "📧 ระบบส่งแจ้งเตือน", "🚫 จัดการ Blacklist", "📋 ประวัติ No-Show"]
     )
     conn = sqlite3.connect(DB_PATH)
@@ -609,13 +610,12 @@ def show_admin_dashboard():
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 ตารางนัดหมายประจำวันนี้")
         df_today = pd.read_sql_query('''
-            SELECT a.appointment_time as เวลา, p.full_name as ชื่อผู้ป่วย, a.service_type as บริการ, 
+            SELECT a.appointment_time as ช่วงเวลา, p.full_name as ชื่อผู้ป่วย, a.service_type as บริการ, 
                    a.status as สถานะ, p.phone as เบอร์โทรศัพท์, a.notes as หมายเหตุ
             FROM appointments a JOIN patients p ON a.patient_id = p.id
             WHERE a.appointment_date = ? ORDER BY a.appointment_time
         ''', conn, params=(today,))
         
-        # ปรับเป็น if-else บล็อกมาตรฐาน ป้องกันบั๊ก DeltaGenerator
         if not df_today.empty:
             st.dataframe(df_today, use_container_width=True)
         else:
@@ -628,7 +628,7 @@ def show_admin_dashboard():
         end_d = col2.date_input("ถึงวันที่", value=date.today() + timedelta(days=7))
         
         df_appts = pd.read_sql_query('''
-            SELECT a.id as รหัสนัด, a.appointment_date as วันที่, a.appointment_time as เวลา, 
+            SELECT a.id as รหัสนัด, a.appointment_date as วันที่, a.appointment_time as ช่วงเวลา, 
                    p.full_name as ชื่อผู้ป่วย, p.phone as โทรศัพท์, a.service_type as บริการ, a.status as สถานะ
             FROM appointments a JOIN patients p ON a.patient_id = p.id
             WHERE a.appointment_date BETWEEN ? AND ? ORDER BY a.appointment_date, a.appointment_time
@@ -660,110 +660,207 @@ def show_admin_dashboard():
                 st.success(f"อัปเดตสถานะรหัสนัด {appt_id} สำเร็จ")
             st.rerun()
 
-    # 3. จัดการ Slot และปฏิทินรายเดือน
-    elif menu == "🗓️ จัดการ Slot และปฏิทินรายเดือน":
-        st.subheader("🗓️ กำหนด Slot ย่อย และเปิด-ปิดทำการแบบรายเดือน")
+    # 3. จัดการ Slot และปฏิทิน
+    elif menu == "🗓️ จัดการ Slot และปฏิทิน":
+        st.subheader("🗓️ กำหนด Slot ย่อย และกระดานวันทำการ")
         
-        tab1, tab2, tab3 = st.tabs(["⚡ สร้าง Slot เหมายกเดือน/ซอยเวลา", "🚫 สั่งปิดทำการทั้งวัน", "📋 ดูและลบตารางเวลาปัจจุบัน"])
+        col_pick1, _ = st.columns([2, 3])
+        start_of_current_week = date.today() - timedelta(days=date.today().weekday())
+        selected_monday = col_pick1.date_input("เลือกวันจันทร์ของสัปดาห์ที่ต้องการดู", value=start_of_current_week)
+        week_monday = selected_monday - timedelta(days=selected_monday.weekday())
+        week_sunday = week_monday + timedelta(days=6)
         
-        with tab1:
-            st.markdown("##### กำหนดช่วงเวลาและจำนวนคิวไปยังวันต่างๆ พร้อมกัน")
-            with st.form("batch_slot_form"):
-                c_d1, c_d2 = st.columns(2)
-                start_range = c_d1.date_input("ตั้งแต่วันที่", value=date.today())
-                end_range = c_d2.date_input("จนถึงวันที่", value=date.today() + timedelta(days=30))
+        m_year_be = week_monday.year + 543
+        s_year_be = week_sunday.year + 543
+        st.markdown(f"#### วันทำการหลัก ({week_monday.strftime('%d/%m')}/{m_year_be} - {week_sunday.strftime('%d/%m')}/{s_year_be})")
+
+        week_days_thai = ["วันจันทร์", "วันอังคาร", "วันพุธ", "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์", "วันอาทิตย์"]
+        cols = st.columns(7)
+        
+        for i in range(7):
+            cur_date = week_monday + timedelta(days=i)
+            cur_date_str = cur_date.strftime('%Y-%m-%d')
+            
+            c = conn.cursor()
+            c.execute('''
+                SELECT is_open, start_time, end_time, max_patients, note 
+                FROM daily_schedule 
+                WHERE schedule_date = ? 
+                ORDER BY start_time ASC
+            ''', (cur_date_str,))
+            day_slots = c.fetchall()
+            
+            with cols[i]:
+                if not day_slots:
+                    time_sub = "-"
+                    slot_content = "<div style='text-align:center; color:#94a3b8; margin: 20px 0;'>-</div>"
+                    total_q = 0
+                elif any(r[0] == 0 for r in day_slots):
+                    time_sub = "ปิดทำการ"
+                    slot_content = "<div style='text-align:center; color:#ef4444; font-weight:600; margin: 20px 0;'>ปิดทำการ</div>"
+                    total_q = 0
+                else:
+                    earliest = day_slots[0][1]
+                    latest = day_slots[-1][2]
+                    time_sub = f"{earliest} - {latest}"
+                    
+                    slot_htmls = []
+                    total_q = 0
+                    for _, s_t, e_t, cap, _ in day_slots:
+                        total_q += cap
+                        slot_htmls.append(f'<div class="slot-pill-box"><span>{s_t} - {e_t}</span><span class="pill-badge">{cap}</span></div>')
+                    slot_content = "".join(slot_htmls)
                 
-                day_map = {0: "จันทร์", 1: "อังคาร", 2: "พุธ", 3: "พฤหัสบดี", 4: "ศุกร์", 5: "เสาร์", 6: "อาทิตย์"}
-                selected_weekdays = st.multiselect(
-                    "เลือกใช้วันไหนบ้างในสัปดาห์ *",
-                    options=list(day_map.keys()),
-                    default=[0, 1, 2, 3, 4],
-                    format_func=lambda x: day_map[x]
-                )
+                card_html = f'<div class="day-card"><div><div class="day-header">{week_days_thai[i]}</div><div class="day-sub">{time_sub}</div>{slot_content}</div><div class="day-footer">{total_q}</div></div>'
+                st.markdown(card_html, unsafe_allow_html=True)
+
+        st.markdown("<br><hr>", unsafe_allow_html=True)
+        
+        tab_slot1, tab_slot2, tab_slot3, tab_slot4 = st.tabs([
+            "⚡ กำหนด Slot เหมายกเดือน", 
+            "➕ เพิ่ม Slot เจาะจงเฉพาะวัน", 
+            "🚫 สั่งปิดทำการทั้งวัน", 
+            "🗑️ ดูรายการและล้าง Slot"
+        ])
+
+        # 1. กำหนดเหมายกเดือน
+        with tab_slot1:
+            st.markdown("##### กำหนดช่วงเวลาและคิว เหมายกช่วง/ยกเดือน (เช่น 1-30 ก.ย.)")
+            with st.form("form_batch_slot"):
+                cb_d1, cb_d2 = st.columns(2)
+                b_start = cb_d1.date_input("ตั้งแต่วันที่", value=date.today())
+                b_end = cb_d2.date_input("จนถึงวันที่", value=date.today() + timedelta(days=30))
                 
-                st.markdown("---")
-                st.markdown("###### ⏰ ระบุช่วงเวลาที่ต้องการซอย และโควตาคิว")
-                col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-                t_start = col_t1.time_input("เวลาเริ่ม", value=time(16, 0))
-                t_end = col_t2.time_input("เวลาสิ้นสุด", value=time(17, 0))
-                q_cap = col_t3.number_input("จำนวนรับสูงสุด (คิว)", min_value=1, max_value=50, value=6)
-                slot_step = col_t4.selectbox("ความยาว Slot ย่อย (นาที)", [15, 30, 45, 60], index=3)
+                day_opts = {0: "วันจันทร์", 1: "วันอังคาร", 2: "วันพุธ", 3: "วันพฤหัสบดี", 4: "วันศุกร์", 5: "วันเสาร์", 6: "วันอาทิตย์"}
+                b_days = st.multiselect("เลือกวันในสัปดาห์", options=list(day_opts.keys()), default=[0, 1, 2, 3, 4], format_func=lambda x: day_opts[x])
                 
-                batch_submit = st.form_submit_button("🚀 บันทึกช่วงเวลานี้ลงปฏิทิน", type="primary")
+                c_t1, c_t2, c_t3 = st.columns(3)
+                bs_time = c_t1.time_input("เวลาเริ่ม", value=time(15, 0))
+                be_time = c_t2.time_input("เวลาสิ้นสุด", value=time(16, 0))
+                bq_cap = c_t3.number_input("จำนวนคิวที่รับ", min_value=1, max_value=50, value=3)
                 
-                if batch_submit:
-                    if start_range > end_range:
+                clear_first = st.checkbox("🧹 ลบ Slot เดิมในช่วงวันที่เลือกทั้งหมดก่อนสร้างใหม่", value=False)
+                
+                if st.form_submit_button("🚀 บันทึกช่วงเวลานี้ลงปฏิทิน", type="primary"):
+                    if b_start > b_end:
                         st.error("วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด")
-                    elif not selected_weekdays:
+                    elif not b_days:
                         st.error("กรุณาเลือกวันในสัปดาห์อย่างน้อย 1 วัน")
                     else:
                         c = conn.cursor()
-                        cur_dt = start_range
-                        count_days = 0
+                        if clear_first:
+                            c.execute("DELETE FROM daily_schedule WHERE schedule_date BETWEEN ? AND ?", 
+                                      (b_start.strftime('%Y-%m-%d'), b_end.strftime('%Y-%m-%d')))
                         
-                        while cur_dt <= end_range:
-                            if cur_dt.weekday() in selected_weekdays:
+                        cur_d = b_start
+                        count_d = 0
+                        while cur_d <= b_end:
+                            if cur_d.weekday() in b_days:
                                 c.execute('''
-                                    INSERT INTO daily_schedule (schedule_date, is_open, start_time, end_time, slot_duration, max_patients, note)
-                                    VALUES (?, 1, ?, ?, ?, ?, 'เปิดทำการ')
-                                ''', (cur_dt.strftime('%Y-%m-%d'), t_start.strftime('%H:%M'), t_end.strftime('%H:%M'), slot_step, q_cap))
-                                count_days += 1
-                            cur_dt += timedelta(days=1)
-                            
+                                    INSERT INTO daily_schedule (schedule_date, is_open, start_time, end_time, max_patients, note)
+                                    VALUES (?, 1, ?, ?, ?, 'เปิดทำการ')
+                                ''', (cur_d.strftime('%Y-%m-%d'), bs_time.strftime('%H:%M'), be_time.strftime('%H:%M'), bq_cap))
+                                count_d += 1
+                            cur_d += timedelta(days=1)
                         conn.commit()
-                        st.success(f"✅ เพิ่ม Slot ช่วงเวลา {t_start.strftime('%H:%M')}-{t_end.strftime('%H:%M')} น. ({q_cap} คิว) รวม {count_days} วัน เรียบร้อยแล้ว")
+                        st.success(f"✅ บันทึก Slot {bs_time.strftime('%H:%M')}-{be_time.strftime('%H:%M')} น. ({bq_cap} คิว) รวม {count_d} วัน เรียบร้อยแล้ว")
                         st.rerun()
 
-        with tab2:
-            st.markdown("##### กำหนดวันหยุดพิเศษ / ปิดทำการทั้งวัน")
-            with st.form("close_day_form"):
-                col_close1, col_close2 = st.columns(2)
-                close_date = col_close1.date_input("เลือกวันที่ต้องการปิดทำการ", value=date.today())
-                close_note = col_close2.text_input("สาเหตุการปิด", placeholder="เช่น วันหยุดนักขัตฤกษ์, ซ่อมยูนิต")
+        # 2. เพิ่ม Slot เฉพาะวัน
+        with tab_slot2:
+            st.markdown("##### เพิ่มช่วงเวลาย่อยในวันใดวันหนึ่ง (กดเพิ่มได้หลายช่วงเวลาใน 1 วัน)")
+            with st.form("form_single_slot"):
+                c_s1, c_s2, c_s3, c_s4 = st.columns(4)
+                s_date = c_s1.date_input("เลือกวันที่", value=date.today())
+                s_start = c_s2.time_input("เวลาเริ่ม", value=time(8, 30))
+                s_end = c_s3.time_input("เวลาสิ้นสุด", value=time(11, 0))
+                s_cap = c_s4.number_input("จำนวนคิว", min_value=1, max_value=50, value=10)
                 
-                close_submit = st.form_submit_button("🔴 สั่งปิดทำการวันนี้", type="primary")
-                if close_submit:
+                if st.form_submit_button("➕ เพิ่มช่วงเวลานี้ในวันที่เลือก", type="primary"):
                     c = conn.cursor()
-                    c.execute("DELETE FROM daily_schedule WHERE schedule_date = ?", (close_date.strftime('%Y-%m-%d'),))
+                    c.execute('''
+                        INSERT INTO daily_schedule (schedule_date, is_open, start_time, end_time, max_patients, note)
+                        VALUES (?, 1, ?, ?, ?, 'เปิดทำการ')
+                    ''', (s_date.strftime('%Y-%m-%d'), s_start.strftime('%H:%M'), s_end.strftime('%H:%M'), s_cap))
+                    conn.commit()
+                    st.success(f"✅ เพิ่ม Slot {s_start.strftime('%H:%M')}-{s_end.strftime('%H:%M')} น. ให้วันที่ {s_date.strftime('%d/%m/%Y')} เรียบร้อย")
+                    st.rerun()
+
+        # 3. สั่งปิดทำการทั้งวัน
+        with tab_slot3:
+            st.markdown("##### สั่งปิดทำการทั้งวัน (เช่น วันหยุดนักขัตฤกษ์ / ปิดซ่อมยูนิต)")
+            with st.form("form_close_day"):
+                cc1, cc2 = st.columns(2)
+                cl_date = cc1.date_input("เลือกวันที่ต้องการปิดทำการ", value=date.today())
+                cl_note = cc2.text_input("สาเหตุที่ปิด", placeholder="เช่น วันหยุดราชการ, วันหยุดนักขัตฤกษ์")
+                
+                if st.form_submit_button("🔴 สั่งปิดทำการทั้งวัน", type="primary"):
+                    c = conn.cursor()
+                    c.execute("DELETE FROM daily_schedule WHERE schedule_date = ?", (cl_date.strftime('%Y-%m-%d'),))
                     c.execute('''
                         INSERT INTO daily_schedule (schedule_date, is_open, note)
                         VALUES (?, 0, ?)
-                    ''', (close_date.strftime('%Y-%m-%d'), close_note))
+                    ''', (cl_date.strftime('%Y-%m-%d'), cl_note))
                     conn.commit()
-                    st.success(f"กำหนดให้วันที่ {close_date.strftime('%d/%m/%Y')} ปิดทำการทั้งวันเรียบร้อย")
+                    st.success(f"กำหนดให้วันที่ {cl_date.strftime('%d/%m/%Y')} ปิดทำการทั้งวันเรียบร้อย")
                     st.rerun()
 
-        with tab3:
-            st.markdown("##### ตรวจสอบและจัดการ Slot ในระบบ")
-            view_month = st.date_input("เลือกดู Slot ตั้งแต่วันที่", value=date.today())
-            
-            df_sched = pd.read_sql_query('''
+        # 4. ดูรายการและลบ Slot (แก้ไขคำสั่งลบให้แม่นยำ 100%)
+        with tab_slot4:
+            st.markdown("##### 🗓️ ลบ Slot ตามช่วงวันที่ (แนะนำ)")
+            col_del_r1, col_del_r2, col_del_r3 = st.columns([2, 2, 2])
+            del_from = col_del_r1.date_input("ลบตั้งแต่วันที่", value=date.today(), key="del_from_d")
+            del_to = col_del_r2.date_input("จนถึงวันที่", value=date.today() + timedelta(days=30), key="del_to_d")
+            col_del_r3.markdown("### ")
+            if col_del_r3.button("🗑️ ล้าง Slot ในช่วงนี้", type="primary", use_container_width=True):
+                c = conn.cursor()
+                c.execute("DELETE FROM daily_schedule WHERE schedule_date BETWEEN ? AND ?", 
+                          (del_from.strftime('%Y-%m-%d'), del_to.strftime('%Y-%m-%d')))
+                num_deleted = c.rowcount
+                conn.commit()
+                if num_deleted > 0:
+                    st.success(f"✅ ล้าง Slot เรียบร้อยแล้วทั้งหมด {num_deleted} รายการ")
+                else:
+                    st.warning("⚠️ ไม่พบรายการ Slot ในช่วงวันที่เลือก")
+                st.rerun()
+
+            st.markdown("---")
+            st.markdown("##### 📋 ตรวจสอบรายการ Slot ทั้งหมดในระบบ")
+            view_d = st.date_input("เลือกดูตั้งแต่ช่วงวันที่", value=date.today() - timedelta(days=7))
+            df_s = pd.read_sql_query('''
                 SELECT id as รหัส, schedule_date as วันที่,
                        CASE WHEN is_open = 1 THEN '🟢 เปิด' ELSE '🔴 ปิด' END as สถานะ,
-                       start_time as เวลาเริ่ม, end_time as เวลาสิ้นสุด, max_patients as 'รับได้ (คิว)', note as หมายเหตุ
+                       start_time as เวลาเริ่ม, end_time as เวลาสิ้นสุด, max_patients as 'คิวที่รับ', note as หมายเหตุ
                 FROM daily_schedule
                 WHERE schedule_date >= ?
                 ORDER BY schedule_date ASC, start_time ASC
-            ''', conn, params=(view_month.strftime('%Y-%m-%d'),))
-            
-            st.dataframe(df_sched, use_container_width=True)
+            ''', conn, params=(view_d.strftime('%Y-%m-%d'),))
+            st.dataframe(df_s, use_container_width=True)
             
             st.markdown("---")
-            c_del1, c_del2 = st.columns(2)
-            del_id = c_del1.number_input("ใส่ 'รหัส (ID)' ของ Slot ที่ต้องการลบ", min_value=1, step=1)
-            if c_del1.button("🗑️ ลบเฉพาะ Slot นี้"):
+            cd1, cd2 = st.columns(2)
+            del_id = cd1.number_input("ใส่ 'รหัส (ID)' ของ Slot ที่ต้องการลบเฉพาะจุด", min_value=1, step=1)
+            if cd1.button("🗑️ ลบเฉพาะ Slot รหัสนี้"):
                 c = conn.cursor()
                 c.execute("DELETE FROM daily_schedule WHERE id = ?", (del_id,))
+                n = c.rowcount
                 conn.commit()
-                st.success(f"ลบ Slot รหัส {del_id} เรียบร้อยแล้ว")
+                if n > 0:
+                    st.success(f"ลบ Slot รหัส {del_id} สำเร็จ")
+                else:
+                    st.warning(f"ไม่พบ Slot รหัส {del_id}")
                 st.rerun()
                 
-            del_date = c_del2.date_input("หรือเลือกลบทุก Slot ของวันนั้น", value=date.today())
-            if c_del2.button("🗑️ ล้าง Slot ทั้งหมดของวันนี้"):
+            del_all_date = cd2.date_input("หรือเลือกลบ Slot ทั้งหมดของวันใดวันหนึ่ง", value=date.today(), key="del_single_day")
+            if cd2.button("🗑️ ล้างตารางเวลาทั้งหมดของวันนี้"):
                 c = conn.cursor()
-                c.execute("DELETE FROM daily_schedule WHERE schedule_date = ?", (del_date.strftime('%Y-%m-%d'),))
+                c.execute("DELETE FROM daily_schedule WHERE schedule_date = ?", (del_all_date.strftime('%Y-%m-%d'),))
+                n = c.rowcount
                 conn.commit()
-                st.success(f"ล้างตารางเวลาของวันที่ {del_date.strftime('%d/%m/%Y')} ทั้งหมดเรียบร้อย")
+                if n > 0:
+                    st.success(f"ล้างตารางเวลาของวันที่ {del_all_date.strftime('%d/%m/%Y')} เรียบร้อย ({n} รายการ)")
+                else:
+                    st.warning("ไม่พบ Slot ในวันที่เลือก")
                 st.rerun()
 
     # 4. ทะเบียนผู้ป่วย
@@ -791,7 +888,7 @@ def show_admin_dashboard():
                 <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
                     <h3 style="color: #0284c7;">⏰ แจ้งเตือนนัดหมายทันตกรรมวันพรุ่งนี้</h3>
                     <p>เรียนคุณ <b>{name}</b>,</p>
-                    <p>ท่านมีนัดหมายบริการ <b>{srv}</b> ในวันพรุ่งนี้ ({tomorrow}) เวลา <b>{appt_t} น.</b></p>
+                    <p>ท่านมีนัดหมายบริการ <b>{srv}</b> ในวันพรุ่งนี้ ({tomorrow}) ช่วงเวลา <b>{appt_t} น.</b></p>
                     <p>กรุณาเดินทางมาถึงก่อนเวลานัดหมาย 15 นาที</p>
                 </div>
                 """
@@ -838,7 +935,7 @@ def main():
         handle_confirmation()
         return
 
-    st.sidebar.markdown("### 🦷 ทันตกรรมออนไลน์")
+    st.sidebar.markdown("### 🦷 ศบส.65 รักษาศุข บางบอน")
     page = st.sidebar.radio("เลือกหน้าต่างทำงาน", ["📅 นัดหมายบริการ", "⚙️ ผู้ดูแลระบบ"])
     
     if page == "📅 นัดหมายบริการ":
