@@ -752,7 +752,7 @@ def find_appointment_row_by_token(ws, token_to_find):
         
     return None
 
-# ========== ยืนยันนัดหมายรอบแรกผ่าน URL (หน้าที่ 2: ส่งอีเมลหน้าที่ 2 กลับให้คนไข้ทันที) ==========
+# ========== ยืนยันนัดหมายรอบแรกผ่าน URL ==========
 def handle_confirmation():
     token_param = st.query_params.get('confirm')
     if isinstance(token_param, list):
@@ -812,7 +812,6 @@ def handle_confirmation():
 
             # ส่งอีเมลหน้าที่ 2 กลับเข้าอีเมลคนไข้ (ป้องกันการยิงซ้ำด้วย Session State)
             session_mail_key = f"sent_confirm_mail_{token}"
-            email_sent_now = False
             
             if session_mail_key not in st.session_state:
                 if email_addr and str(email_addr).strip():
@@ -851,7 +850,6 @@ def handle_confirmation():
                     sent = send_email(email_addr.strip(), "ยืนยันการรับข้อมูลการจองนัดหมายสำเร็จ", email_page2_body)
                     if sent:
                         st.session_state[session_mail_key] = True
-                        email_sent_now = True
 
             st.markdown(f"""
             <div style="font-size: 1.15rem; color: #1e293b; margin-bottom: 1rem;">
@@ -859,9 +857,9 @@ def handle_confirmation():
             </div>
             """, unsafe_allow_html=True)
             
-            # แจ้งเตือนเรื่องการส่งอีเมลหน้าที่ 2
+            # แจ้งเตือนเรื่องการส่งอีเมลหน้าที่ 2 (ปรับข้อความตัดคำว่า "พร้อมปุ่มยกเลิก" ออก)
             if email_addr and str(email_addr).strip():
-                st.info(f"📨 **ระบบได้ส่งอีเมลยืนยันพร้อมปุ่มยกเลิกไปยัง `{email_addr.strip()}` เรียบร้อยแล้ว**\n*(หากไม่พบในกล่องจดหมายหลัก กรุณาตรวจสอบในโฟลเดอร์ **จดหมายขยะ / Spam**)*")
+                st.info(f"📨 **ระบบได้ส่งอีเมลยืนยัน ไปยัง `{email_addr.strip()}` เรียบร้อยแล้ว**\n*(หากไม่พบในกล่องจดหมายหลัก กรุณาตรวจสอบในโฟลเดอร์ **จดหมายขยะ / Spam**)*")
 
             # ช่องสี่เหลี่ยมสีเขียว ติดต่อห้องเวชระเบียน ตัวใหญ่ๆ
             st.markdown(f"""
@@ -1533,8 +1531,8 @@ def show_admin_dashboard():
                             df_cur = df_cur[~mask]
                             ws_s.clear()
                             safe_append_row(ws_s, TABLE_SCHEMAS["daily_schedule"])
-                            if not df_cur.empty:
-                                safe_append_rows(ws_s, df_cur[TABLE_SCHEMAS["daily_schedule"]].values.tolist())
+                            if not df_kept.empty:
+                                safe_append_rows(ws_s, df_kept[TABLE_SCHEMAS["daily_schedule"]].values.tolist())
 
                         next_id = int(pd.to_numeric(df_cur['id'], errors='coerce').fillna(0).max()) + 1 if not df_cur.empty else 1
                         new_rows = []
