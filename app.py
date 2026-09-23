@@ -163,6 +163,31 @@ def get_arrival_time_str(slot_label: str) -> str:
             return "16.30 น."
         return "ก่อนเวลานัดหมาย 30 นาที"
 
+# ========== กล่องเงื่อนไขและข้อตกลง HTML (ใช้ซ้ำได้) ==========
+TERMS_AND_CONDITIONS_HTML = """
+<div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem; margin-bottom: 1rem;">
+    <h4 style="color: #166534; margin-top: 0; margin-bottom: 0.75rem; font-size: 1.05rem;">🏥 เงื่อนไขและข้อตกลงการเข้ารับบริการนัดหมายออนไลน์</h4>
+    <div style="font-size: 0.88rem; color: #1e293b; line-height: 1.6;">
+        <p style="margin-bottom: 4px;"><b>1. การเตรียมตัวก่อนมาถึง</b></p>
+        <ul style="margin-top: 0; margin-bottom: 8px; padding-left: 20px; color: #334155;">
+            <li><b>การยืนยันนัด:</b> ผู้รับบริการต้อง <b>ยืนยันนัดหมายใน e- mail ที่ส่งให้ท่าน ก่อนเข้ารับบริการ 1 วัน หรือโทรยืนยันนัดหมาย เบอร์ 02 453 0526 ต่อ 302</b></li>
+            <li><b>การลงทะเบียน:</b> ผู้รับบริการต้องมาติดต่อที่ห้องเวชระเบียน เพื่อตรวจสอบสิทธิ์และทำประวัติ <b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. ลงทะเบียนเวลา 15.30 น. / รอบเวลา 17.00 - 18.00 น. ลงทะเบียนเวลา 16.30 น.</b></li>
+            <li><b>เอกสารที่ต้องเตรียม:</b> โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> มาแสดงทุกครั้งที่เข้ารับบริการ</li>
+            <li><b>ประวัติสุขภาพ:</b> หากมีโรคประจำตัว โปรดนำยาทั้งหมดมาด้วย หากแพ้ยา โปรดนำบัตรแพ้ยามาด้วย</li>
+        </ul>
+        <p style="margin-bottom: 4px;"><b>2. ข้อกำหนดเรื่องเวลาและการรักษาคิว</b></p>
+        <ul style="margin-top: 0; margin-bottom: 8px; padding-left: 20px; color: #334155;">
+            <li><b>การมาสาย:</b> <b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. มาเกินเวลา 15.45 น. / รอบเวลา 17.00 - 18.00 น. มาเกินเวลา 16.45 น. ทางศูนย์ขอสงวนสิทธิ์ในการ ยกเลิกนัดหมาย ของท่านทันที เพื่อไม่ให้กระทบต่อคิวถัดไป</b></li>
+            <li><b>การจองคิว:</b> ระบบจำกัดสิทธิ์ <b>1 ชื่อ ต่อ 1 คิวนัดหมาย</b> เท่านั้น</li>
+        </ul>
+        <p style="margin-bottom: 4px;"><b>3. การยกเลิกหรือเลื่อนนัด</b></p>
+        <ul style="margin-top: 0; margin-bottom: 0; padding-left: 20px; color: #334155;">
+            <li><b>การแจ้งยกเลิก:</b> หากไม่สามารถมาตามนัดได้ ท่านสามารถกดยกเลิกผ่านอีเมลได้ตลอดเวลา หรือโทรแจ้งล่วงหน้า 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b> <b style="color: #dc2626;">หากท่านไม่แจ้งยกเลิกนัดหมาย ท่านจะไม่สามารถจองผ่านระบบออนไลน์ได้ ในครั้งถัดไป</b></li>
+        </ul>
+    </div>
+</div>
+"""
+
 # ========== ตั้งค่าฟอนต์ภาษาไทยสำหรับ PDF ==========
 @st.cache_resource
 def init_pdf_fonts():
@@ -568,30 +593,8 @@ def show_booking_form():
 
         notes = st.text_area("หมายเหตุเพิ่มเติม / อาการเบื้องต้น / โรคประจำตัว (ถ้ามี)")
         
-        # 🏥 กล่องเงื่อนไขและข้อตกลง (ปรับปรุงเน้นตัวหนา สีแดง 3 จุดสำคัญ)
-        st.markdown("""
-        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem; margin-bottom: 1rem;">
-            <h4 style="color: #166534; margin-top: 0; margin-bottom: 0.75rem; font-size: 1.05rem;">🏥 เงื่อนไขและข้อตกลงการเข้ารับบริการนัดหมายออนไลน์</h4>
-            <div style="font-size: 0.88rem; color: #1e293b; line-height: 1.6;">
-                <p style="margin-bottom: 4px;"><b>1. การเตรียมตัวก่อนมาถึง</b></p>
-                <ul style="margin-top: 0; margin-bottom: 8px; padding-left: 20px; color: #334155;">
-                    <li><b>การยืนยันนัด:</b> ผู้รับบริการต้อง <b>ยืนยันนัดหมายใน e- mail ที่ส่งให้ท่าน ก่อนเข้ารับบริการ 1 วัน หรือโทรยืนยันนัดหมาย เบอร์ 02 453 0526 ต่อ 302</b></li>
-                    <li><b>การลงทะเบียน:</b> ผู้รับบริการต้องมาติดต่อที่ห้องเวชระเบียน เพื่อตรวจสอบสิทธิ์และทำประวัติ <b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. ลงทะเบียนเวลา 15.30 น. / รอบเวลา 17.00 - 18.00 น. ลงทะเบียนเวลา 16.30 น.</b></li>
-                    <li><b>เอกสารที่ต้องเตรียม:</b> โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> มาแสดงทุกครั้งที่เข้ารับบริการ</li>
-                    <li><b>ประวัติสุขภาพ:</b> หากมีโรคประจำตัว โปรดนำยาทั้งหมดมาด้วย หากแพ้ยา โปรดนำบัตรแพ้ยามาด้วย</li>
-                </ul>
-                <p style="margin-bottom: 4px;"><b>2. ข้อกำหนดเรื่องเวลาและการรักษาคิว</b></p>
-                <ul style="margin-top: 0; margin-bottom: 8px; padding-left: 20px; color: #334155;">
-                    <li><b>การมาสาย:</b> <b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. มาเกินเวลา 15.45 น. / รอบเวลา 17.00 - 18.00 น. มาเกินเวลา 16.45 น. ทางศูนย์ขอสงวนสิทธิ์ในการ ยกเลิกนัดหมาย ของท่านทันที เพื่อไม่ให้กระทบต่อคิวถัดไป</b></li>
-                    <li><b>การจองคิว:</b> ระบบจำกัดสิทธิ์ <b>1 ชื่อ ต่อ 1 คิวนัดหมาย</b> เท่านั้น</li>
-                </ul>
-                <p style="margin-bottom: 4px;"><b>3. การยกเลิกหรือเลื่อนนัด</b></p>
-                <ul style="margin-top: 0; margin-bottom: 0; padding-left: 20px; color: #334155;">
-                    <li><b>การแจ้งยกเลิก:</b> หากไม่สามารถมาตามนัดได้ ท่านสามารถกดยกเลิกผ่านอีเมลได้ตลอดเวลา หรือโทรแจ้งล่วงหน้า 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b> <b style="color: #dc2626;">หากท่านไม่แจ้งยกเลิกนัดหมาย ท่านจะไม่สามารถจองผ่านระบบออนไลน์ได้ ในครั้งถัดไป</b></li>
-                </ul>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # 🏥 กล่องเงื่อนไขและข้อตกลง
+        st.markdown(TERMS_AND_CONDITIONS_HTML, unsafe_allow_html=True)
         
         agree_terms = st.checkbox("ข้าพเจ้าได้อ่านและยอมรับเงื่อนไขและข้อตกลงการเข้ารับบริการนัดหมายออนไลน์ข้างต้น *")
         st.markdown("<br>", unsafe_allow_html=True)
@@ -685,7 +688,6 @@ def show_booking_form():
         base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
         confirmation_url = f"{base_url}/?confirm={token}"
 
-        # อีเมลแจ้งคนไข้หลังลงทะเบียน
         email_body = f"""
         <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
             <div style="background: #0284c7; padding: 16px; border-radius: 8px; text-align: center; color: white;">
@@ -750,7 +752,7 @@ def find_appointment_row_by_token(ws, token_to_find):
         
     return None
 
-# ========== ยืนยันนัดหมายรอบแรกผ่าน URL ==========
+# ========== ยืนยันนัดหมายรอบแรกผ่าน URL (หน้าจอที่ 2 พร้อมปุ่มยกเลิกสีแดงเด่น + เงื่อนไขด้านล่าง) ==========
 def handle_confirmation():
     token_param = st.query_params.get('confirm')
     if isinstance(token_param, list):
@@ -810,16 +812,18 @@ def handle_confirmation():
             </div>
             """, unsafe_allow_html=True)
             
-            # ส่วนยกเลิกการจอง
-            st.markdown("""
-            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
-                <p style="font-size: 1rem; color: #475569; margin-bottom: 10px;">หากท่านต้องการยกเลิกการจอง:</p>
+            # ปุ่มยกเลิกจอง สีแดงเด่นๆ
+            st.markdown(f"""
+            <div style="text-align: center; margin: 30px 0 25px 0;">
+                <p style="font-size: 1.05rem; color: #475569; margin-bottom: 10px; font-weight: 600;">หากท่านต้องการยกเลิกการจอง:</p>
+                <a href="/?cancel={token}" target="_self" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white !important; padding: 14px 42px; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 1.2rem; display: inline-block; box-shadow: 0 8px 20px rgba(220, 38, 38, 0.4); border: 2px solid #b91c1c;">
+                    ❌ ยกเลิกการจอง
+                </a>
             </div>
             """, unsafe_allow_html=True)
-            
-            if st.button("ยกเลิกการจอง", type="secondary"):
-                st.query_params['cancel'] = token
-                st.rerun()
+
+            # ใส่เงื่อนไขหน้าแรก มาแสดงข้างล่างด้วย
+            st.markdown(TERMS_AND_CONDITIONS_HTML, unsafe_allow_html=True)
     else:
         st.error("ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
     
@@ -887,16 +891,18 @@ def handle_final_confirmation():
             </div>
             """, unsafe_allow_html=True)
 
-            # ส่วนยกเลิกการจอง
-            st.markdown("""
-            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
-                <p style="font-size: 1rem; color: #475569; margin-bottom: 10px;">หากท่านต้องการยกเลิกการจอง:</p>
+            # ปุ่มยกเลิกจอง สีแดงเด่นๆ
+            st.markdown(f"""
+            <div style="text-align: center; margin: 30px 0 25px 0;">
+                <p style="font-size: 1.05rem; color: #475569; margin-bottom: 10px; font-weight: 600;">หากท่านต้องการยกเลิกการจอง:</p>
+                <a href="/?cancel={token}" target="_self" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white !important; padding: 14px 42px; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 1.2rem; display: inline-block; box-shadow: 0 8px 20px rgba(220, 38, 38, 0.4); border: 2px solid #b91c1c;">
+                    ❌ ยกเลิกการจอง
+                </a>
             </div>
             """, unsafe_allow_html=True)
-            
-            if st.button("ยกเลิกการจอง", type="secondary"):
-                st.query_params['cancel'] = token
-                st.rerun()
+
+            # ใส่เงื่อนไขหน้าแรก มาแสดงข้างล่างด้วย
+            st.markdown(TERMS_AND_CONDITIONS_HTML, unsafe_allow_html=True)
     else:
         st.error("ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
         
@@ -1455,8 +1461,8 @@ def show_admin_dashboard():
                             df_cur = df_cur[~mask]
                             ws_s.clear()
                             safe_append_row(ws_s, TABLE_SCHEMAS["daily_schedule"])
-                            if not df_kept.empty:
-                                safe_append_rows(ws_s, df_kept[TABLE_SCHEMAS["daily_schedule"]].values.tolist())
+                            if not df_cur.empty:
+                                safe_append_rows(ws_s, df_cur[TABLE_SCHEMAS["daily_schedule"]].values.tolist())
 
                         next_id = int(pd.to_numeric(df_cur['id'], errors='coerce').fillna(0).max()) + 1 if not df_cur.empty else 1
                         new_rows = []
