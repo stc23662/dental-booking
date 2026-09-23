@@ -5,8 +5,19 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
+import io
+import os
+import urllib.request
 import gspread
 from google.oauth2.service_account import Credentials
+
+# ไลบรารีสำหรับสร้างไฟล์ PDF
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # ========== คอนฟิกหน้าเว็บ ==========
 st.set_page_config(
@@ -101,12 +112,214 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 SERVICES = ["ถอนฟัน", "อุดฟัน", "ขูดหินปูน", "ตรวจสุขภาพช่องปาก"]
 
 TABLE_SCHEMAS = {
-    "appointments": ["id", "patient_id", "full_name", "id_card", "phone", "email", "service_type", "appointment_date", "appointment_time", "queue_number", "status", "token", "reminder_sent", "notes", "created_at"],
+    "appointments": ["id", "patient_id", "full_name", "id_card", "phone", "email", "service_type", "appointment_date", "appointment_time", "status", "token", "reminder_sent", "notes", "created_at"],
     "patients": ["id", "full_name", "id_card", "phone", "email", "created_at"],
     "daily_schedule": ["id", "schedule_date", "is_open", "start_time", "end_time", "max_patients", "note"],
     "blacklist": ["id", "patient_id", "full_name", "id_card", "phone", "reason", "no_show_count", "blacklisted_until", "created_by", "created_at"],
     "no_show_records": ["id", "appointment_id", "patient_id", "appointment_date", "status", "reported_by", "notes", "created_at"]
 }
+
+# ========== ฟังก์ชันคำนวณเวลาที่ต้องมาติดต่อห้องเวชระเบียน ==========
+def get_arrival_time_str(slot_label: str) -> str:
+    try:
+        raw_start = slot_label.split("-")[0].replace(" น.", "").strip().replace(".", ":")
+        parts = raw_start.split(":")
+        h, m = int(parts[0]), int(parts[1])
+        start_dt = datetime(2000, 1, 1, h, m)
+        arrival_dt = start_dt - timedelta(minutes=30)
+        return arrival_dt.strftime("%H.%M น.")
+    except Exception:
+        if "16" in slot_label:
+            return "15.30 น."
+        elif "17" in slot_label:
+            return "16.30 น."
+        return "ก่อนเวลานัดหมาย 30 นาที"
+
+# ========== ตั้งค่าฟอนต์ภาษาไทยสำหรับ PDF ==========
+@st.cache_resource
+def init_pdf_fonts():
+    font_reg = "Sarabun-Regular.ttf"
+    font_bold = "Sarabun-Bold.ttf"
+    
+    if not os.path.exists(font_reg):
+        try:
+            urllib.request.urlretrieve(
+                "https://raw.githubusercontent.com/google/fonts/main/ofl/sarabun/Sarabun-Regular.ttf",
+                font_reg
+            )
+        except Exception:
+            pass
+            
+    if not os.path.exists(font_bold):
+        try:
+            urllib.request.urlretrieve(
+                "https://raw.githubusercontent.com/google/fonts/main/ofl/sarabun/Sarabun-Bold.ttf",
+                font_bold
+            )
+        except Exception:
+            pass
+
+    has_font = False
+    if os.path.exists(font_reg):
+        try:
+            pdfmetrics.registerFont(TTFont('Sarabun', font_reg))
+            has_font = True
+        except Exception:
+            pass
+            
+    if os.path.exists(font_bold):
+        try:
+            pdfmetrics.registerFont(TTFont('Sarabun-Bold', font_bold))
+        except Exception:
+            pass
+            
+    return has_font
+
+# ========== สร้างไฟล์ PDF ใบรายชื่อประจำวัน (A4 แนวนอน) ==========
+def generate_daily_appointments_pdf(df_day: pd.DataFrame, target_date: date) -> bytes:
+    has_font = init_pdf_fonts()
+    font_name = 'Sarabun' if has_font else 'Helvetica'
+    font_bold = 'Sarabun-Bold' if has_font else 'Helvetica-Bold'
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=30,
+        bottomMargin=30
+    )
+    
+    elements = []
+    
+    style_title = ParagraphStyle(
+        'TitleStyle',
+        fontName=font_bold,
+        fontSize=15,
+        leading=19,
+        alignment=1,
+        textColor=colors.HexColor('#0369a1')
+    )
+    style_sub = ParagraphStyle(
+        'SubTitleStyle',
+        fontName=font_bold,
+        fontSize=12,
+        leading=16,
+        alignment=1,
+        textColor=colors.HexColor('#1e293b')
+    )
+    style_meta = ParagraphStyle(
+        'MetaStyle',
+        fontName=font_name,
+        fontSize=9,
+        leading=12,
+        alignment=2,
+        textColor=colors.HexColor('#64748b')
+    )
+    style_th = ParagraphStyle(
+        'THStyle',
+        fontName=font_bold,
+        fontSize=9,
+        leading=11,
+        alignment=1,
+        textColor=colors.white
+    )
+    style_td = ParagraphStyle(
+        'TDStyle',
+        fontName=font_name,
+        fontSize=8.5,
+        leading=11,
+        alignment=0,
+        textColor=colors.HexColor('#1e293b')
+    )
+    style_td_center = ParagraphStyle(
+        'TDCenterStyle',
+        fontName=font_name,
+        fontSize=8.5,
+        leading=11,
+        alignment=1,
+        textColor=colors.HexColor('#1e293b')
+    )
+    
+    # วันที่แบบ พ.ศ.
+    d_be = target_date.strftime('%d/%m/') + str(target_date.year + 543)
+    now_be = datetime.now().strftime('%d/%m/') + str(datetime.now().year + 543) + datetime.now().strftime(' %H:%M น.')
+    
+    elements.append(Paragraph("ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน", style_title))
+    elements.append(Spacer(1, 3))
+    elements.append(Paragraph(f"ใบรายชื่อผู้เข้ารับบริการทันตกรรม ประจำวันที่ {d_be}", style_sub))
+    elements.append(Spacer(1, 3))
+    elements.append(Paragraph(f"พิมพ์รายงานเมื่อ: {now_be} | รวมทั้งหมด: {len(df_day)} ท่าน", style_meta))
+    elements.append(Spacer(1, 8))
+    
+    headers = [
+        Paragraph("<b>ลำดับ</b>", style_th),
+        Paragraph("<b>เวลารักษา</b>", style_th),
+        Paragraph("<b>เวลาเวชระเบียน</b>", style_th),
+        Paragraph("<b>ชื่อ - นามสกุล</b>", style_th),
+        Paragraph("<b>บริการ</b>", style_th),
+        Paragraph("<b>เบอร์โทรศัพท์</b>", style_th),
+        Paragraph("<b>สถานะการยืนยัน</b>", style_th),
+        Paragraph("<b>หมายเหตุ / ลงชื่อรับบริการ</b>", style_th),
+    ]
+    
+    table_data = [headers]
+    
+    status_map = {
+        'reconfirmed': '🟢 ยืนยันรอบ 2 (มาแน่นอน)',
+        'confirmed': '🟡 ยืนยันรอบแรกแล้ว',
+        'pending': '⚪ รอยืนยัน',
+        'completed': '✅ รับบริการแล้ว',
+        'no_show': '🔴 ไม่มาตามนัด',
+        'cancelled': '❌ ยกเลิก'
+    }
+    
+    for idx, (_, row) in enumerate(df_day.iterrows(), start=1):
+        appt_time = str(row.get('appointment_time', ''))
+        arrival_t = get_arrival_time_str(appt_time)
+        full_name = str(row.get('full_name', ''))
+        service = str(row.get('service_type', ''))
+        phone = str(row.get('phone', ''))
+        raw_stat = str(row.get('status', ''))
+        stat_th = status_map.get(raw_stat, raw_stat)
+        notes = str(row.get('notes', '')) if row.get('notes') and str(row.get('notes')).strip() != 'None' else ''
+        
+        table_data.append([
+            Paragraph(str(idx), style_td_center),
+            Paragraph(appt_time, style_td_center),
+            Paragraph(arrival_t, style_td_center),
+            Paragraph(full_name, style_td),
+            Paragraph(service, style_td),
+            Paragraph(phone, style_td_center),
+            Paragraph(stat_th, style_td_center),
+            Paragraph(notes, style_td),
+        ])
+        
+    col_widths = [35, 75, 80, 160, 100, 85, 110, 135]
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
+    
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0284c7')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]
+    
+    for r_idx in range(1, len(table_data)):
+        if r_idx % 2 == 0:
+            t_style.append(('BACKGROUND', (0, r_idx), (-1, r_idx), colors.HexColor('#f8fafc')))
+        else:
+            t_style.append(('BACKGROUND', (0, r_idx), (-1, r_idx), colors.white))
+            
+    table.setStyle(TableStyle(t_style))
+    elements.append(table)
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 # ========== เชื่อมต่อ Google Sheets พร้อม Cache จัดการ Quota 429 ==========
 @st.cache_resource
@@ -143,7 +356,6 @@ def ensure_worksheets_initialized(_sh):
     except Exception:
         pass
 
-# แคชตารางข้อมูล 15 วินาที เพื่อป้องกัน Quota 429
 @st.cache_data(ttl=15, show_spinner=False)
 def get_table_df(table_name):
     sh = get_spreadsheet()
@@ -309,7 +521,7 @@ def get_available_slots(appointment_date: date):
     df_appts = get_table_df("appointments")
     active_appts = df_appts[
         (df_appts['appointment_date'].astype(str) == date_str) & 
-        (df_appts['status'].isin(['pending', 'confirmed']))
+        (df_appts['status'].isin(['pending', 'confirmed', 'reconfirmed']))
     ]
     
     all_slots = []
@@ -380,7 +592,7 @@ def show_booking_form():
                 <p style="margin-bottom: 4px;"><b>1. การเตรียมตัวก่อนมาถึง</b></p>
                 <ul style="margin-top: 0; margin-bottom: 8px; padding-left: 20px; color: #334155;">
                     <li><b>การยืนยันนัด:</b> ผู้รับบริการต้อง <b>โทรยืนยันนัดหมาย ล่วงหน้า ก่อนเข้ารับบริการ 1 วัน</b> (โทร. 02 453 0526 ต่อ 302)</li>
-                    <li><b>การลงทะเบียน:</b> ผู้รับบริการต้องมาติดต่อที่เคาน์เตอร์<b>ก่อนเวลานัดหมายอย่างน้อย 30 นาทีเท่านั้น</b> เพื่อตรวจสอบสิทธิ์และทำประวัติ (เช่น หากท่านจองรอบเวลา 16.00 - 17.00 น. <b>ต้องมาถึงศูนย์เวลา 15.30 น.</b> / หากท่านจองรอบ 17.00 - 18.00 น. <b>ต้องมาถึงเวลา 16.30 น.</b>) หากท่านมาแสดงตนเกินเวลาที่กำหนด ขอยกเลิกนัดหมาย เพื่อไม่ให้กระทบการให้บริการคิวถัดไป</li>
+                    <li><b>การลงทะเบียน:</b> ผู้รับบริการต้องมาติดต่อที่ห้องเวชระเบียน<b>ก่อนเวลานัดหมายอย่างน้อย 30 นาทีเท่านั้น</b> เพื่อตรวจสอบสิทธิ์และทำประวัติ (เช่น หากท่านจองรอบเวลา 16.00 - 17.00 น. <b>ต้องมาถึงห้องเวชระเบียนเวลา 15.30 น.</b> / หากท่านจองรอบ 17.00 - 18.00 น. <b>ต้องมาถึงห้องเวชระเบียนเวลา 16.30 น.</b>) หากท่านมาแสดงตนเกินเวลาที่กำหนด ขอยกเลิกนัดหมาย เพื่อไม่ให้กระทบการให้บริการคิวถัดไป</li>
                     <li><b>เอกสารที่ต้องเตรียม:</b> โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> มาแสดงทุกครั้งที่เข้ารับบริการ</li>
                     <li><b>ประวัติสุขภาพ:</b> หากมีโรคประจำตัว โปรดนำยาทั้งหมดมาด้วย หากแพ้ยา โปรดนำบัตรแพ้ยามาด้วย</li>
                 </ul>
@@ -428,20 +640,20 @@ def show_booking_form():
 
         clean_time_label = selected_time_slot.split(" น.")[0]
         date_str = appointment_date.strftime('%Y-%m-%d')
+        arrival_time_str = get_arrival_time_str(clean_time_label)
 
         # ตรวจสอบนัดหมายค้างอยู่ในระบบ
         df_appts = get_table_df("appointments")
         if not df_appts.empty:
             active_existing = df_appts[
                 (df_appts['id_card'].astype(str) == id_card.strip()) &
-                (df_appts['status'].isin(['pending', 'confirmed'])) &
+                (df_appts['status'].isin(['pending', 'confirmed', 'reconfirmed'])) &
                 (df_appts['appointment_date'].astype(str) >= date.today().strftime('%Y-%m-%d'))
             ]
             if not active_existing.empty:
                 ex = active_existing.iloc[0]
-                th_stat = "รอยืนยัน" if ex['status'] == "pending" else "ยืนยันแล้ว"
-                q_txt = f" (คิวที่ {ex['queue_number']})" if ex.get('queue_number') else ""
-                st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{ex['service_type']}** ในวันที่ **{ex['appointment_date']}** ช่วงเวลา **{ex['appointment_time']} น.**{q_txt} อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเลื่อนหรือยกเลิกกรุณาติดต่อคลินิก)*")
+                th_stat = "รอยืนยัน" if ex['status'] == "pending" else ("ยืนยันรอบ 2 แล้ว" if ex['status'] == "reconfirmed" else "ยืนยันแล้ว")
+                st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{ex['service_type']}** ในวันที่ **{ex['appointment_date']}** ช่วงเวลา **{ex['appointment_time']} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเลื่อนหรือยกเลิกกรุณาติดต่อคลินิก)*")
                 return
 
         sh = get_spreadsheet()
@@ -463,10 +675,6 @@ def show_booking_form():
             p_id = int(df_p['id'].max()) + 1 if not df_p.empty and df_p['id'].max() else 1
             ws_p.append_row([p_id, full_name.strip(), id_card.strip(), phone.strip(), email.strip(), now_str])
 
-        # คำนวณลำดับคิวประจำวัน
-        day_appts = df_appts[df_appts['appointment_date'].astype(str) == date_str] if not df_appts.empty else pd.DataFrame()
-        next_q = (int(day_appts['queue_number'].max()) if not day_appts.empty and not pd.isna(day_appts['queue_number'].max()) and day_appts['queue_number'].max() != '' else 0) + 1
-
         # บันทึกนัดหมาย
         ws_a = sh.worksheet("appointments")
         next_appt_id = int(df_appts['id'].max()) + 1 if not df_appts.empty and df_appts['id'].max() else 1
@@ -474,7 +682,7 @@ def show_booking_form():
 
         ws_a.append_row([
             next_appt_id, p_id, full_name.strip(), id_card.strip(), phone.strip(), email.strip(),
-            service_name, date_str, clean_time_label, next_q, 'pending', token, 0, notes, now_str
+            service_name, date_str, clean_time_label, 'pending', token, 0, notes, now_str
         ])
         st.cache_data.clear()
 
@@ -488,41 +696,38 @@ def show_booking_form():
                 <p style="margin:5px 0 0 0; font-size: 14px;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
             </div>
             
-            <div style="text-align: center; background-color: #f0f9ff; border: 2px dashed #0284c7; border-radius: 10px; padding: 15px; margin: 20px 0;">
-                <span style="font-size: 14px; color: #0369a1; font-weight: bold;">ลำดับคิวประจำวันของท่าน</span><br>
-                <span style="font-size: 32px; color: #0284c7; font-weight: 800;">คิวที่ {next_q}</span>
+            <div style="text-align: center; background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 10px; padding: 18px; margin: 20px 0;">
+                <span style="font-size: 15px; color: #065f46; font-weight: bold;">เวลาที่ท่านต้องมาติดต่อห้องเวชระเบียน</span><br>
+                <span style="font-size: 32px; color: #047857; font-weight: 800;">เวลา {arrival_time_str}</span><br>
+                <span style="font-size: 13px; color: #065f46;">(ต้องมาถึงก่อนเวลานัดหมาย 30 นาทีเท่านั้น เพื่อตรวจสอบสิทธิ์และทำประวัติ)</span>
             </div>
 
             <p>เรียนคุณ <b>{full_name}</b>,</p>
-            <p>ระบบได้รับคำขอจองคิวของท่านแล้ว รายละเอียดการนัดหมาย:</p>
+            <p>ท่านได้ทำการจองนัดเข้ารับบริการสำเร็จ รายละเอียดการนัดหมายของท่านมีดังนี้:</p>
             <ul>
-                <li><b>ลำดับคิว:</b> คิวที่ {next_q} ของวัน</li>
                 <li><b>บริการ:</b> {service_name}</li>
-                <li><b>วันที่:</b> {appointment_date.strftime('%d/%m/%Y')}</li>
-                <li><b>ช่วงเวลา:</b> {clean_time_label} น.</li>
+                <li><b>วันที่นัดหมาย:</b> {appointment_date.strftime('%d/%m/%Y')}</li>
+                <li><b>ช่วงเวลารักษา:</b> {clean_time_label} น.</li>
+                <li><b>เวลาติดต่อห้องเวชระเบียน:</b> <b style="color: #047857;">{arrival_time_str}</b></li>
             </ul>
 
-            <div style="text-align: center; margin: 25px 0; padding: 16px; background-color: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px;">
-                <p style="color: #c2410c; font-weight: bold; margin: 0 0 10px 0; font-size: 15px;">
-                    ⚠️ ผู้รับบริการต้องโทรยืนยันนัดหมาย ล่วงหน้าก่อนเข้ารับบริการ 1 วัน
-                </p>
-                <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 16px;">
+            <div style="text-align: center; margin: 25px 0;">
+                <a href="{confirmation_url}" style="background-color: #16a34a; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 15px; margin-bottom: 10px;">
+                    ✅ กดยืนยันได้รับข้อมูลการจองนัดหมาย
+                </a><br>
+                <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 10px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 14px;">
                     📞 กดโทรยืนยันนัด: 02 453 0526 ต่อ 302
                 </a>
-                <div style="margin-top: 14px;">
-                    <span style="font-size: 12px; color: #64748b;">หรือกดยืนยันผ่านระบบออนไลน์:</span><br>
-                    <a href="{confirmation_url}" style="color: #16a34a; font-weight: bold; font-size: 13px; text-decoration: underline;">✅ กดยืนยันผ่านลิงก์นี้</a>
-                </div>
             </div>
 
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-top: 20px; font-size: 13px; color: #334155;">
                 <b style="color: #0f172a;">📌 เงื่อนไขและข้อแนะนำในการเข้ารับบริการ:</b>
                 <ul style="margin: 6px 0 0 0; padding-left: 18px; line-height: 1.6;">
-                    <li><b>การยืนยันนัด:</b> ผู้รับบริการต้องโทรยืนยันนัดหมาย ล่วงหน้าก่อนเข้ารับบริการ 1 วัน</li>
-                    <li><b>การลงทะเบียน:</b> กรุณามาติดต่อเคาน์เตอร์<b>ก่อนเวลานัดหมายอย่างน้อย 30 นาทีเท่านั้น</b> เพื่อตรวจสอบสิทธิ์และทำประวัติ (เช่น หากจองรอบ 16.00 น. ต้องมาถึง 15.30 น. / หากจองรอบ 17.00 น. ต้องมาถึง 16.30 น.)</li>
+                    <li><b>การยืนยันนัด:</b> ผู้รับบริการต้องโทรยืนยันนัดหมาย ล่วงหน้าก่อนเข้ารับบริการ 1 วัน (โทร. 02 453 0526 ต่อ 302)</li>
+                    <li><b>การลงทะเบียน:</b> กรุณามาติดต่อห้องเวชระเบียน<b>เวลา {arrival_time_str} (ก่อนเวลานัด 30 นาทีเท่านั้น)</b> เพื่อตรวจสอบสิทธิ์และทำประวัติ</li>
                     <li><b>เอกสารที่ต้องเตรียม:</b> โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> มาแสดงทุกครั้ง</li>
                     <li><b>ประวัติสุขภาพ:</b> หากมีโรคประจำตัว โปรดนำยาทั้งหมดมาด้วย หากแพ้ยา โปรดนำบัตรแพ้ยามาด้วย</li>
-                    <li><b>การมาสาย:</b> หากมาสายเกินเวลาที่กำหนด ทางศูนย์ขอสงวนสิทธิ์ยกเลิกนัดทันที เพื่อไม่ให้กระทบคิวถัดไป</li>
+                    <li><b>การมาสาย:</b> หากมาแสดงตนเกินเวลาที่กำหนด ทางศูนย์ขอสงวนสิทธิ์ยกเลิกนัดหมายทันที เพื่อไม่ให้กระทบคิวถัดไป</li>
                     <li><b>การแจ้งยกเลิก:</b> หากไม่สามารถมาตามนัดได้ โปรดแจ้งล่วงหน้าอย่างน้อย 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b></li>
                 </ul>
             </div>
@@ -530,10 +735,25 @@ def show_booking_form():
             <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน | โทร. 02 453 0526 ต่อ 302 | dental665@gmail.com</p>
         </div>
         """
-        send_email(email.strip(), f"ยืนยันการนัดหมายทันตกรรม (คิวที่ {next_q})", email_body)
-        st.success(f"🎉 **จองคิวสำเร็จ! ท่านได้ [คิวที่ {next_q}] ประจำวัน** (รหัสอ้างอิง `APPT-{next_appt_id:05d}`)\n\nข้อมูลถูกบันทึกลงระบบอย่างถาวรแล้ว กรุณาโทรยืนยันนัดหมายล่วงหน้า 1 วันทำการ ที่เบอร์ 02 453 0526 ต่อ 302")
+        send_email(email.strip(), "ยืนยันการนัดหมายทันตกรรม ศบส.65 รักษาศุข บางบอน", email_body)
+        
+        st.markdown(f"""
+        <div style="background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0;">
+            <h3 style="color: #065f46; margin: 0 0 10px 0;">🎉 ท่านได้ทำการจองนัดเข้ารับบริการสำเร็จ!</h3>
+            <p style="font-size: 1.05rem; color: #047857; margin: 0 0 10px 0;">
+                ท่านได้เลือกช่วงเวลารักษา: <b>{clean_time_label} น.</b>
+            </p>
+            <div style="background-color: #ffffff; border: 1px solid #a7f3d0; border-radius: 8px; padding: 12px; margin: 10px 0;">
+                <b style="color: #b91c1c; font-size: 1.15rem;">📌 ท่านต้องมาติดต่อห้องเวชระเบียนเวลา {arrival_time_str}</b><br>
+                <span style="font-size: 0.92rem; color: #374151;">(ก่อนเวลานัดหมาย 30 นาที เพื่อตรวจสอบสิทธิ์และทำประวัติ หากมาเกินเวลาขอสงวนสิทธิ์ยกเลิกนัด)</span>
+            </div>
+            <p style="font-size: 0.92rem; color: #065f46; margin: 10px 0 0 0;">
+                ✉️ ระบบได้ส่งรายละเอียดและลิงก์ยืนยันไปยังอีเมล <b>{email.strip()}</b> เรียบร้อยแล้ว โปรดโทรยืนยันนัดล่วงหน้า 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b>
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ========== ยืนยันนัดผ่าน URL ==========
+# ========== ยืนยันนัดหมายรอบแรกผ่าน URL ==========
 def handle_confirmation():
     token = st.query_params.get('confirm')
     sh = get_spreadsheet()
@@ -553,23 +773,69 @@ def handle_confirmation():
         name = found.get('full_name')
         appt_date = found.get('appointment_date')
         appt_time = found.get('appointment_time')
-        q_num = found.get('queue_number')
         status = found.get('status')
-        q_label = f"คิวที่ {q_num}" if q_num else ""
+        arrival_time = get_arrival_time_str(str(appt_time))
         
         if status == 'pending':
             headers = ws.row_values(1)
             ws.update_cell(row_idx, headers.index('status') + 1, 'confirmed')
             st.cache_data.clear()
-            st.success(f"✅ **ยืนยันนัดหมายสำเร็จ!** คุณ {name} ได้รับ **[{q_label}]** สำหรับวันที่ {appt_date} ช่วงเวลา {appt_time} น.")
-            st.info("ℹ️ กรุณาโทรยืนยันนัดหมายล่วงหน้า 1 วันทำการ (โทร. 02 453 0526 ต่อ 302) และเดินทางมาถึงก่อนเวลานัดหมายอย่างน้อย 30 นาทีเท่านั้น")
-        elif status == 'confirmed':
-            st.info(f"ℹ️ นัดหมายนี้ได้รับการยืนยันเรียบร้อยแล้ว ({q_label})")
+            st.success(f"✅ **ยืนยันได้รับข้อมูลการจองนัดหมายสำเร็จ!** คุณ {name} สำหรับวันที่ {appt_date} ช่วงเวลารักษา {appt_time} น.")
+            st.info(f"📌 กรุณามาติดต่อห้องเวชระเบียนในเวลา **{arrival_time}** (ก่อนเวลานัด 30 นาที) และนำบัตรประชาชนตัวจริงมาด้วย")
+        elif status in ['confirmed', 'reconfirmed']:
+            st.info("ℹ️ นัดหมายนี้ได้รับการยืนยันข้อมูลเรียบร้อยแล้ว")
         else:
             st.warning("⚠️ นัดหมายนี้เสร็จสิ้นหรือถูกยกเลิกไปแล้ว")
     else:
         st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
     
+    if st.button("🏠 กลับสู่หน้าหลัก"):
+        st.query_params.clear()
+        st.rerun()
+
+# ========== ยืนยันการเข้ารับบริการรอบที่ 2 (จากอีเมลแจ้งเตือน 1 วัน) ==========
+def handle_final_confirmation():
+    token = st.query_params.get('final_confirm')
+    sh = get_spreadsheet()
+    ws = sh.worksheet("appointments")
+    records = ws.get_all_records()
+    found = None
+    row_idx = None
+    
+    for idx, r in enumerate(records, start=2):
+        if str(r.get("token")) == str(token):
+            found = r
+            row_idx = idx
+            break
+
+    st.markdown("""<div class="hero-banner"><h1>🦷 ผลการยืนยันเข้ารับบริการ (รอบที่ 2)</h1><p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p></div>""", unsafe_allow_html=True)
+    if found:
+        name = found.get('full_name')
+        appt_date = found.get('appointment_date')
+        appt_time = found.get('appointment_time')
+        status = found.get('status')
+        arrival_time = get_arrival_time_str(str(appt_time))
+        
+        if status in ['pending', 'confirmed', 'reconfirmed']:
+            headers = ws.row_values(1)
+            ws.update_cell(row_idx, headers.index('status') + 1, 'reconfirmed')
+            st.cache_data.clear()
+            st.success(f"🎉 **ยืนยันการเข้ารับบริการรอบที่ 2 สำเร็จเรียบร้อยแล้ว!**")
+            st.markdown(f"""
+            <div style="background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 10px; padding: 16px; margin: 15px 0;">
+                <p style="margin: 0; font-size: 1.05rem; color: #065f46;">
+                    ระบบได้ส่งข้อมูลให้เจ้าหน้าที่แล้วว่าคุณ <b>{name}</b> <b>ยืนยันมาแน่นอน</b> สำหรับนัดหมายวันที่ <b>{appt_date}</b>
+                </p>
+                <p style="margin: 8px 0 0 0; color: #b91c1c; font-weight: bold;">
+                    ⏰ เวลาที่ต้องมาติดต่อห้องเวชระเบียน: {arrival_time} (ก่อนเวลารักษา {appt_time} น. 30 นาที)
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ นัดหมายนี้เสร็จสิ้นหรือถูกยกเลิกไปแล้ว")
+    else:
+        st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
+        
     if st.button("🏠 กลับสู่หน้าหลัก"):
         st.query_params.clear()
         st.rerun()
@@ -630,40 +896,49 @@ def show_admin_dashboard():
         
         future_cnt = len(df_appts[df_appts['appointment_date'].astype(str) >= today_str]) if not df_appts.empty else 0
         today_cnt = len(df_appts[df_appts['appointment_date'].astype(str) == today_str]) if not df_appts.empty else 0
-        conf_today_cnt = len(df_appts[(df_appts['appointment_date'].astype(str) == today_str) & (df_appts['status'] == 'confirmed')]) if not df_appts.empty else 0
+        reconf_today_cnt = len(df_appts[(df_appts['appointment_date'].astype(str) == today_str) & (df_appts['status'] == 'reconfirmed')]) if not df_appts.empty else 0
         pending_cnt = len(df_appts[df_appts['status'] == 'pending']) if not df_appts.empty else 0
 
         col1.metric("นัดหมายล่วงหน้า", f"{future_cnt} ราย")
-        col2.metric("นัดหมายวันนี้", f"{today_cnt} ราย")
-        col3.metric("ยืนยันแล้ววันนี้", f"{conf_today_cnt} ราย")
-        col4.metric("รอยืนยันทั้งหมด", f"{pending_cnt} ราย")
+        col2.metric("นัดหมายวันนี้ทั้งหมด", f"{today_cnt} ราย")
+        col3.metric("🟢 ยืนยันรอบ 2 แล้ววันนี้", f"{reconf_today_cnt} ราย")
+        col4.metric("⚪ รอยืนยันรอบแรก", f"{pending_cnt} ราย")
             
         st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📋 ตารางนัดหมายประจำวันนี้ (เรียงตามลำดับคิว)")
+        st.subheader("📋 ตารางนัดหมายประจำวันนี้")
         
         if not df_appts.empty:
             df_today = df_appts[df_appts['appointment_date'].astype(str) == today_str].copy()
             if not df_today.empty:
-                df_today = df_today.sort_values(by=['queue_number'])
+                df_today['เวลาเวชระเบียน'] = df_today['appointment_time'].apply(get_arrival_time_str)
+                df_today['สถานะแสดงผล'] = df_today['status'].map({
+                    'reconfirmed': '🟢 ยืนยันมาแน่นอน (ครั้งที่ 2)',
+                    'confirmed': '🟡 ยืนยันรอบแรกแล้ว',
+                    'pending': '⚪ รอยืนยัน',
+                    'completed': '✅ รับบริการแล้ว',
+                    'no_show': '🔴 ไม่มาตามนัด',
+                    'cancelled': '❌ ยกเลิก'
+                }).fillna(df_today['status'])
+                
+                df_today = df_today.sort_values(by=['appointment_time'])
                 display_cols = {
-                    'queue_number': 'คิวที่',
-                    'appointment_time': 'ช่วงเวลา',
+                    'appointment_time': 'ช่วงเวลารักษา',
+                    'เวลาเวชระเบียน': 'เวลาต้องมาเวชระเบียน',
                     'full_name': 'ชื่อผู้ป่วย',
                     'service_type': 'บริการ',
-                    'status': 'สถานะ',
+                    'สถานะแสดงผล': 'สถานะการยืนยัน',
                     'phone': 'เบอร์โทรศัพท์',
                     'notes': 'หมายเหตุ'
                 }
                 df_view = df_today[list(display_cols.keys())].rename(columns=display_cols)
                 st.dataframe(df_view, use_container_width=True)
 
-                # ปุ่มเช็คชื่อด่วน
                 st.markdown("---")
                 st.markdown("##### ⚡ เช็คชื่อผู้เข้ารับบริการ (ปลดล็อกให้คนไข้จองรอบใหม่ได้ทันที)")
-                active_today = df_today[df_today['status'].isin(['pending', 'confirmed'])]
+                active_today = df_today[df_today['status'].isin(['pending', 'confirmed', 'reconfirmed'])]
                 if not active_today.empty:
                     col_act1, col_act2 = st.columns([3, 1])
-                    act_opts = {row['id']: f"[คิวที่ {row['queue_number']} | {row['appointment_time']} น.] {row['full_name']} - {row['service_type']}" for _, row in active_today.iterrows()}
+                    act_opts = {row['id']: f"[{row['appointment_time']} น. / เวชระเบียน {row['เวลาเวชระเบียน']}] {row['full_name']} - {row['service_type']} ({row['สถานะแสดงผล']})" for _, row in active_today.iterrows()}
                     sel_id = col_act1.selectbox("เลือกคนไข้ที่รับการรักษาเสร็จเรียบร้อยแล้ว", options=list(act_opts.keys()), format_func=lambda x: act_opts[x])
                     col_act2.markdown("### ")
                     if col_act2.button("✅ ยืนยันรับบริการแล้ว", type="primary", use_container_width=True):
@@ -723,7 +998,7 @@ def show_admin_dashboard():
                 send_mail_chk = st.checkbox("ส่งอีเมลแจ้งเตือน (หากระบุอีเมล)", value=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
-            submit_walkin = st.button("💾 บันทึกการนัดหมาย (ออกคิวทันที)", type="primary", use_container_width=True)
+            submit_walkin = st.button("💾 บันทึกการนัดหมาย", type="primary", use_container_width=True)
 
         if submit_walkin:
             if not avail_slots or not p_slot:
@@ -739,22 +1014,19 @@ def show_admin_dashboard():
 
                 p_slot_clean = p_slot.split(" น.")[0]
                 p_date_str = p_date.strftime('%Y-%m-%d')
+                arrival_time_str = get_arrival_time_str(p_slot_clean)
 
                 # ตรวจสอบนัดซ้ำ
                 if not df_appts.empty:
                     dup_appt = df_appts[
                         (df_appts['id_card'].astype(str) == p_idcard.strip()) &
-                        (df_appts['status'].isin(['pending', 'confirmed'])) &
+                        (df_appts['status'].isin(['pending', 'confirmed', 'reconfirmed'])) &
                         (df_appts['appointment_date'].astype(str) >= date.today().strftime('%Y-%m-%d'))
                     ]
                     if not dup_appt.empty:
                         d_row = dup_appt.iloc[0]
-                        st.warning(f"⚠️ คนไข้รายนี้มีนัดอยู่แล้วในวันที่ {d_row['appointment_date']} ช่วงเวลา {d_row['appointment_time']} น. (คิวที่ {d_row['queue_number']})")
+                        st.warning(f"⚠️ คนไข้รายนี้มีนัดอยู่แล้วในวันที่ {d_row['appointment_date']} ช่วงเวลา {d_row['appointment_time']} น.")
                         return
-
-                # คำนวณคิว
-                day_appts = df_appts[df_appts['appointment_date'].astype(str) == p_date_str] if not df_appts.empty else pd.DataFrame()
-                next_q = (int(day_appts['queue_number'].max()) if not day_appts.empty and not pd.isna(day_appts['queue_number'].max()) and day_appts['queue_number'].max() != '' else 0) + 1
 
                 # บันทึกคนไข้
                 ws_p = sh.worksheet("patients")
@@ -778,7 +1050,7 @@ def show_admin_dashboard():
 
                 ws_a.append_row([
                     new_appt_id, pt_id, p_name.strip(), p_idcard.strip(), p_phone.strip(), email_save,
-                    p_service, p_date_str, p_slot_clean, next_q, t_stat, token, 0, final_notes, now_str
+                    p_service, p_date_str, p_slot_clean, t_stat, token, 0, final_notes, now_str
                 ])
                 st.cache_data.clear()
 
@@ -789,17 +1061,18 @@ def show_admin_dashboard():
                             <h2 style="margin:0;">ใบนัดหมายทันตกรรม</h2>
                             <p style="margin:5px 0 0 0; font-size: 14px;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
                         </div>
-                        <div style="text-align: center; background-color: #f0f9ff; border: 2px dashed #0284c7; border-radius: 10px; padding: 15px; margin: 20px 0;">
-                            <span style="font-size: 14px; color: #0369a1; font-weight: bold;">ลำดับคิวประจำวันของท่าน</span><br>
-                            <span style="font-size: 32px; color: #0284c7; font-weight: 800;">คิวที่ {next_q}</span>
+                        <div style="text-align: center; background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 10px; padding: 18px; margin: 20px 0;">
+                            <span style="font-size: 15px; color: #065f46; font-weight: bold;">เวลาที่ต้องมาติดต่อห้องเวชระเบียน</span><br>
+                            <span style="font-size: 30px; color: #047857; font-weight: 800;">เวลา {arrival_time_str}</span><br>
+                            <span style="font-size: 13px; color: #065f46;">(ก่อนเวลานัดหมาย 30 นาที)</span>
                         </div>
                         <p>เรียนคุณ <b>{p_name}</b>,</p>
                         <p>เจ้าหน้าที่ได้ลงทะเบียนนัดหมายให้ท่านเรียบร้อยแล้ว:</p>
                         <ul>
-                            <li><b>ลำดับคิว:</b> คิวที่ {next_q} ของวัน</li>
                             <li><b>บริการ:</b> {p_service}</li>
                             <li><b>วันที่:</b> {p_date.strftime('%d/%m/%Y')}</li>
-                            <li><b>ช่วงเวลา:</b> {p_slot_clean} น.</li>
+                            <li><b>ช่วงเวลารักษา:</b> {p_slot_clean} น.</li>
+                            <li><b>เวลาติดต่อห้องเวชระเบียน:</b> <b>{arrival_time_str}</b></li>
                             <li><b>ช่องทางการนัด:</b> {channel}</li>
                         </ul>
                         <div style="text-align: center; margin: 20px 0;">
@@ -807,54 +1080,129 @@ def show_admin_dashboard():
                                 📞 โทรยืนยันนัด/สอบถาม: 02 453 0526 ต่อ 302
                             </a>
                         </div>
-                        <p style="font-size: 13px; color: #64748b;">* กรุณาเดินทางมาถึงเคาน์เตอร์ก่อนเวลานัดหมายอย่างน้อย 30 นาที และนำบัตรประชาชนตัวจริงมาด้วยทุกครั้ง</p>
+                        <p style="font-size: 13px; color: #64748b;">* กรุณาเดินทางมาถึงห้องเวชระเบียนเวลา {arrival_time_str} และนำบัตรประชาชนตัวจริงมาด้วยทุกครั้ง</p>
                     </div>
                     """
-                    send_email(email_save, f"ใบนัดหมายทันตกรรม (คิวที่ {next_q})", email_body)
+                    send_email(email_save, f"ใบนัดหมายทันตกรรม ศบส.65 รักษาศุข บางบอน", email_body)
 
-                st.success(f"🎉 **บันทึกนัดหมายสำเร็จ!** คนไข้ได้ **[คิวที่ {next_q}]** ประจำวันที่ {p_date.strftime('%d/%m/%Y')} ช่วงเวลา {p_slot_clean} น. (รหัสอ้างอิง `APPT-{new_appt_id:05d}`)")
+                st.success(f"🎉 **บันทึกนัดหมายสำเร็จ!** วันที่ {p_date.strftime('%d/%m/%Y')} ช่วงเวลา {p_slot_clean} น. (เวลาเวชระเบียน: {arrival_time_str})")
 
-    # 3. จัดการคิวนัดหมาย
+    # 3. จัดการคิวนัดหมาย (เพิ่มแท็บพิมพ์ PDF ออกรายงาน)
     elif menu == "📅 จัดการคิวนัดหมาย":
-        col1, col2 = st.columns(2)
-        start_d = col1.date_input("ตั้งแต่วันที่", value=date.today())
-        end_d = col2.date_input("ถึงวันที่", value=date.today() + timedelta(days=7))
+        tab_manage1, tab_manage2 = st.tabs(["🖨️ พิมพ์ใบรายชื่อคนไข้ (PDF)", "🔍 ค้นหาและเปลี่ยนสถานะนัดหมาย"])
         
-        if not df_appts.empty:
-            mask = (df_appts['appointment_date'].astype(str) >= start_d.strftime('%Y-%m-%d')) & (df_appts['appointment_date'].astype(str) <= end_d.strftime('%Y-%m-%d'))
-            df_filtered = df_appts[mask].sort_values(by=['appointment_date', 'queue_number'])
-            st.dataframe(df_filtered, use_container_width=True)
-        else:
-            st.info("ไม่มีข้อมูลนัดหมายในช่วงเวลานี้")
+        # แท็บที่ 1: พิมพ์ใบรายชื่อประจำวันเป็น PDF
+        with tab_manage1:
+            st.subheader("🖨️ พิมพ์ใบรายชื่อผู้เข้ารับบริการทันตกรรม (PDF)")
+            st.caption("เลือกวันที่ต้องการ เพื่อพิมพ์ใบรายชื่อคนไข้สำหรับเจ้าหน้าที่และแพทย์ประจำคลินิก (รูปแบบกระดาษ A4 แนวนอน)")
+            
+            c_pdate1, c_pdate2 = st.columns([2, 3])
+            print_date = c_pdate1.date_input("เลือกวันที่ต้องการพิมพ์ใบรายชื่อ", value=date.today())
+            print_date_str = print_date.strftime('%Y-%m-%d')
+            
+            if not df_appts.empty:
+                df_day_print = df_appts[df_appts['appointment_date'].astype(str) == print_date_str].copy()
+                if not df_day_print.empty:
+                    df_day_print = df_day_print.sort_values(by=['appointment_time'])
+                    df_day_print['เวลาเวชระเบียน'] = df_day_print['appointment_time'].apply(get_arrival_time_str)
+                    df_day_print['สถานะแสดงผล'] = df_day_print['status'].map({
+                        'reconfirmed': '🟢 ยืนยันรอบ 2 (มาแน่นอน)',
+                        'confirmed': '🟡 ยืนยันรอบแรกแล้ว',
+                        'pending': '⚪ รอยืนยัน',
+                        'completed': '✅ รับบริการแล้ว',
+                        'no_show': '🔴 ไม่มาตามนัด',
+                        'cancelled': '❌ ยกเลิก'
+                    }).fillna(df_day_print['status'])
 
-        st.markdown("---")
-        st.subheader("เปลี่ยนสถานะนัดหมาย")
-        c1, c2, c3 = st.columns([1, 2, 1])
-        appt_id = c1.number_input("รหัสนัดหมาย (ID)", min_value=1, step=1)
-        new_status = c2.selectbox("สถานะใหม่", [
-            ("completed", "เข้ารับบริการแล้ว (Completed) - ปลดล็อกให้จองใหม่ได้"),
-            ("confirmed", "ยืนยันแล้ว (Confirmed)"),
-            ("pending", "รอยืนยัน (Pending)"),
-            ("no_show", "ไม่มาตามนัด (No-Show)"),
-            ("cancelled", "ยกเลิกนัด (Cancelled)")
-        ], format_func=lambda x: x[1])
-        
-        c3.markdown("### ")
-        if c3.button("💾 บันทึกสถานะ", type="primary", use_container_width=True):
-            target_stat = new_status[0]
-            if target_stat == "no_show":
-                record_no_show(appt_id, reported_by=st.session_state.admin_user, notes="เจ้าหน้าที่ระบุไม่มาตามนัด")
-                st.warning(f"บันทึก No-Show ให้รหัสนัด {appt_id} เรียบร้อย")
+                    # แสดงตัวเลขสรุป
+                    c_s1, c_s2, c_s3 = st.columns(3)
+                    c_s1.metric("จำนวนคนไข้นัดทั้งหมด", f"{len(df_day_print)} ราย")
+                    c_s2.metric("🟢 ยืนยันรอบ 2 (มาแน่นอน)", f"{len(df_day_print[df_day_print['status'] == 'reconfirmed'])} ราย")
+                    c_s3.metric("🟡 ยืนยันรอบแรกแล้ว", f"{len(df_day_print[df_day_print['status'] == 'confirmed'])} ราย")
+
+                    # สร้างไฟล์ PDF
+                    pdf_bytes = generate_daily_appointments_pdf(df_day_print, print_date)
+                    d_be_filename = print_date.strftime('%Y%m%d')
+                    
+                    st.download_button(
+                        label=f"📥 ดาวน์โหลดไฟล์ PDF ประจำวันที่ {print_date.strftime('%d/%m/%Y')} (สำหรับสั่งพิมพ์)",
+                        data=pdf_bytes,
+                        file_name=f"รายชื่อคนไข้ทันตกรรม_{d_be_filename}.pdf",
+                        mime="application/pdf",
+                        type="primary"
+                    )
+
+                    st.markdown("##### 📋 ตัวอย่างตารางข้อมูลที่จะพิมพ์ออกมา:")
+                    disp_view = df_day_print[['appointment_time', 'เวลาเวชระเบียน', 'full_name', 'service_type', 'phone', 'สถานะแสดงผล', 'notes']].rename(columns={
+                        'appointment_time': 'ช่วงเวลารักษา',
+                        'เวลาเวชระเบียน': 'เวลาเวชระเบียน',
+                        'full_name': 'ชื่อ-นามสกุล',
+                        'service_type': 'บริการ',
+                        'phone': 'เบอร์โทรศัพท์',
+                        'สถานะแสดงผล': 'สถานะ',
+                        'notes': 'หมายเหตุ'
+                    })
+                    st.dataframe(disp_view, use_container_width=True)
+                else:
+                    st.info(f"ℹ️ ไม่มีรายการนัดหมายในวันที่ {print_date.strftime('%d/%m/%Y')}")
             else:
-                ws_a = sh.worksheet("appointments")
-                for idx, r in enumerate(ws_a.get_all_records(), start=2):
-                    if str(r.get('id')) == str(appt_id):
-                        headers = ws_a.row_values(1)
-                        ws_a.update_cell(idx, headers.index('status') + 1, target_stat)
-                        break
-                st.cache_data.clear()
-                st.success(f"อัปเดตสถานะรหัสนัด {appt_id} สำเร็จ")
-            st.rerun()
+                st.info("ยังไม่มีข้อมูลนัดหมายในระบบ")
+
+        # แท็บที่ 2: ค้นหาและเปลี่ยนสถานะ
+        with tab_manage2:
+            st.subheader("🔍 ค้นหาและเปลี่ยนสถานะนัดหมาย")
+            col1, col2 = st.columns(2)
+            start_d = col1.date_input("ตั้งแต่วันที่", value=date.today())
+            end_d = col2.date_input("ถึงวันที่", value=date.today() + timedelta(days=7))
+            
+            if not df_appts.empty:
+                mask = (df_appts['appointment_date'].astype(str) >= start_d.strftime('%Y-%m-%d')) & (df_appts['appointment_date'].astype(str) <= end_d.strftime('%Y-%m-%d'))
+                df_filtered = df_appts[mask].copy()
+                if not df_filtered.empty:
+                    df_filtered['เวลาเวชระเบียน'] = df_filtered['appointment_time'].apply(get_arrival_time_str)
+                    df_filtered['สถานะ'] = df_filtered['status'].map({
+                        'reconfirmed': '🟢 ยืนยันมาแน่นอน (ครั้งที่ 2)',
+                        'confirmed': '🟡 ยืนยันรอบแรกแล้ว',
+                        'pending': '⚪ รอยืนยัน',
+                        'completed': '✅ รับบริการแล้ว',
+                        'no_show': '🔴 ไม่มาตามนัด',
+                        'cancelled': '❌ ยกเลิก'
+                    }).fillna(df_filtered['status'])
+                    st.dataframe(df_filtered.sort_values(by=['appointment_date', 'appointment_time']), use_container_width=True)
+                else:
+                    st.info("ไม่มีข้อมูลนัดหมายในช่วงเวลานี้")
+            else:
+                st.info("ไม่มีข้อมูลนัดหมายในช่วงเวลานี้")
+
+            st.markdown("---")
+            st.subheader("เปลี่ยนสถานะนัดหมาย")
+            c1, c2, c3 = st.columns([1, 2, 1])
+            appt_id = c1.number_input("รหัสนัดหมาย (ID)", min_value=1, step=1)
+            new_status = c2.selectbox("สถานะใหม่", [
+                ("completed", "เข้ารับบริการแล้ว (Completed) - ปลดล็อกให้จองใหม่ได้"),
+                ("reconfirmed", "🟢 ยืนยันมาแน่นอน (ครั้งที่ 2)"),
+                ("confirmed", "ยืนยันแล้ว (Confirmed)"),
+                ("pending", "รอยืนยัน (Pending)"),
+                ("no_show", "ไม่มาตามนัด (No-Show)"),
+                ("cancelled", "ยกเลิกนัด (Cancelled)")
+            ], format_func=lambda x: x[1])
+            
+            c3.markdown("### ")
+            if c3.button("💾 บันทึกสถานะ", type="primary", use_container_width=True):
+                target_stat = new_status[0]
+                if target_stat == "no_show":
+                    record_no_show(appt_id, reported_by=st.session_state.admin_user, notes="เจ้าหน้าที่ระบุไม่มาตามนัด")
+                    st.warning(f"บันทึก No-Show ให้รหัสนัด {appt_id} เรียบร้อย")
+                else:
+                    ws_a = sh.worksheet("appointments")
+                    for idx, r in enumerate(ws_a.get_all_records(), start=2):
+                        if str(r.get('id')) == str(appt_id):
+                            headers = ws_a.row_values(1)
+                            ws_a.update_cell(idx, headers.index('status') + 1, target_stat)
+                            break
+                    st.cache_data.clear()
+                    st.success(f"อัปเดตสถานะรหัสนัด {appt_id} สำเร็จ")
+                st.rerun()
 
     # 4. จัดการ Slot และปฏิทิน
     elif menu == "🗓️ จัดการ Slot และปฏิทิน":
@@ -967,12 +1315,12 @@ def show_admin_dashboard():
                         if new_rows:
                             ws_s.append_rows(new_rows)
                         st.cache_data.clear()
-                        st.success(f"✅ บันทึก Slot {bs_time.strftime('%H:%M')}-{be_time.strftime('%H:%M')} น. ({bq_cap} คิว) รวม {len(new_rows)} วัน เรียบร้อยแล้ว")
+                        st.success(f"✅ บันทึก Slot {bs_time.strftime('%H:%M')}-{be_time.strftime('%H:%M')} น. รวม {len(new_rows)} วัน เรียบร้อยแล้ว")
                         st.rerun()
 
         # 2. เพิ่ม Slot เฉพาะวัน
         with tab_slot2:
-            st.markdown("##### เพิ่มช่วงเวลาย่อยในวันใดวันหนึ่ง (กดเพิ่มได้หลายช่วงเวลาใน 1 วัน)")
+            st.markdown("##### เพิ่มช่วงเวลาย่อยในวันใดวันหนึ่ง")
             with st.form("form_single_slot"):
                 c_s1, c_s2, c_s3, c_s4 = st.columns(4)
                 s_date = c_s1.date_input("เลือกวันที่", value=date.today())
@@ -989,7 +1337,7 @@ def show_admin_dashboard():
                         s_start.strftime('%H:%M'), s_end.strftime('%H:%M'), s_cap, 'เปิดทำการ'
                     ])
                     st.cache_data.clear()
-                    st.success(f"✅ เพิ่ม Slot {s_start.strftime('%H:%M')}-{s_end.strftime('%H:%M')} น. ให้วันที่ {s_date.strftime('%d/%m/%Y')} เรียบร้อย")
+                    st.success(f"✅ เพิ่ม Slot {s_start.strftime('%H:%M')}-{s_end.strftime('%H:%M')} น. เรียบร้อย")
                     st.rerun()
 
         # 3. สั่งปิดทำการทั้งวัน
@@ -1096,11 +1444,13 @@ def show_admin_dashboard():
     # 6. ระบบส่งแจ้งเตือน
     elif menu == "📧 ระบบส่งแจ้งเตือน":
         st.subheader("📧 ส่งอีเมลแจ้งเตือนล่วงหน้า 1 วัน")
+        st.caption("ระบบจะส่งอีเมลแจ้งเตือนนัดหมาย และให้คนไข้กดยืนยันการเข้ารับบริการรอบที่ 2 (สถานะจะเปลี่ยนเป็นสีเขียวในระบบ)")
+        
         if st.button("🚀 ส่งอีเมลแจ้งเตือนทันที", type="primary"):
             tomorrow_str = (date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
             targets = df_appts[
                 (df_appts['appointment_date'].astype(str) == tomorrow_str) & 
-                (df_appts['status'] == 'confirmed') & 
+                (df_appts['status'].isin(['confirmed', 'pending'])) & 
                 (df_appts['reminder_sent'].astype(str).isin(['0', 0, '']))
             ] if not df_appts.empty else pd.DataFrame()
             
@@ -1108,43 +1458,56 @@ def show_admin_dashboard():
             ws_a = sh.worksheet("appointments")
             records = ws_a.get_all_records()
             headers = ws_a.row_values(1)
+            base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
             
             for _, row in targets.iterrows():
                 email_addr = row.get('email')
                 name = row.get('full_name')
                 appt_t = row.get('appointment_time')
                 srv = row.get('service_type')
-                q_num = row.get('queue_number')
                 appt_id = row.get('id')
+                token = row.get('token')
+                arrival_time = get_arrival_time_str(str(appt_t))
+                final_confirm_url = f"{base_url}/?final_confirm={token}"
                 
-                q_badge = f"<p style='font-size: 20px; font-weight: bold; color: #0284c7; margin: 10px 0;'>ลำดับคิวของท่าน: คิวที่ {q_num}</p>" if q_num else ""
                 body = f"""
-                <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                    <h3 style="color: #0284c7;">⏰ แจ้งเตือนนัดหมายทันตกรรมวันพรุ่งนี้</h3>
-                    <p>เรียนคุณ <b>{name}</b>,</p>
-                    {q_badge}
-                    <p>ท่านมีนัดหมายบริการ <b>{srv}</b> ในวันพรุ่งนี้ ({tomorrow_str}) ช่วงเวลา <b>{appt_t} น.</b></p>
+                <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; line-height: 1.6; max-width: 600px; margin: auto;">
+                    <div style="background: #0284c7; padding: 14px; border-radius: 6px; text-align: center; color: white;">
+                        <h3 style="margin: 0;">⏰ แจ้งเตือนนัดหมายทันตกรรมวันพรุ่งนี้</h3>
+                        <p style="margin: 4px 0 0 0; font-size: 13px;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
+                    </div>
+                    <p style="margin-top: 20px;">เรียนคุณ <b>{name}</b>,</p>
+                    <p>ท่านมีนัดหมายบริการ <b>{srv}</b> ในวันพรุ่งนี้ ({tomorrow_str}) ช่วงเวลารักษา <b>{appt_t} น.</b></p>
                     
-                    <div style="text-align: center; margin: 15px 0;">
-                        <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 10px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-                            📞 โทรยืนยันนัด/สอบถาม: 02 453 0526 ต่อ 302
+                    <div style="text-align: center; background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 10px; padding: 16px; margin: 15px 0;">
+                        <span style="font-size: 14px; color: #065f46; font-weight: bold;">เวลาที่ต้องมาติดต่อห้องเวชระเบียน</span><br>
+                        <span style="font-size: 28px; color: #047857; font-weight: 800;">เวลา {arrival_time}</span><br>
+                        <span style="font-size: 12px; color: #065f46;">(ก่อนเวลานัดหมาย 30 นาที)</span>
+                    </div>
+
+                    <div style="text-align: center; margin: 25px 0;">
+                        <a href="{final_confirm_url}" style="background-color: #16a34a; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                            ✅ กดยืนยันการเข้ารับบริการ (ยืนยันรอบที่ 2)
+                        </a><br><br>
+                        <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 10px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px;">
+                            📞 กดโทรยืนยันนัด: 02 453 0526 ต่อ 302
                         </a>
                     </div>
 
                     <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 10px 14px; margin: 15px 0; font-size: 13px; color: #334155;">
                         <b>ข้อปฏิบัติก่อนเข้ารับบริการ:</b>
                         <ul style="margin: 5px 0 0 0; padding-left: 18px; line-height: 1.6;">
-                            <li>กรุณาเดินทางมาถึงเคาน์เตอร์<b>ก่อนเวลานัดหมายอย่างน้อย 30 นาทีเท่านั้น</b> เพื่อทำประวัติและตรวจสอบสิทธิ์</li>
+                            <li>กรุณาเดินทางมาถึงห้องเวชระเบียน<b>เวลา {arrival_time} (ก่อนเวลา 30 นาทีเท่านั้น)</b> เพื่อทำประวัติและตรวจสอบสิทธิ์</li>
                             <li>โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> และยาประจำตัว/บัตรแพ้ยา (ถ้ามี) มาด้วยทุกครั้ง</li>
                             <li>หากมาสายเกินเวลาที่กำหนด ทางศูนย์ขอสงวนสิทธิ์ยกเลิกนัดหมายทันที</li>
-                            <li>หากต้องการยกเลิก/เลื่อนนัด โปรดแจ้งล่วงหน้าอย่างน้อย 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b></li>
+                            <li>หากต้องการยกเลิก/เลื่อนนัด โปรดแจ้งล่วงหน้า โทร. <b>02 453 0526 ต่อ 302</b></li>
                         </ul>
                     </div>
                     <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
                     <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน | โทร. 02 453 0526 ต่อ 302</p>
                 </div>
                 """
-                if send_email(email_addr, f"เตือนนัดหมายทันตกรรม (คิวที่ {q_num})", body):
+                if send_email(email_addr, f"เตือนนัดหมายทันตกรรมวันพรุ่งนี้ (โปรดยืนยันรับบริการ)", body):
                     for idx, r in enumerate(records, start=2):
                         if str(r.get('id')) == str(appt_id):
                             ws_a.update_cell(idx, headers.index('reminder_sent') + 1, 1)
@@ -1239,7 +1602,7 @@ def main():
         st.error("⚠️ **ยังไม่ได้เชื่อมต่อ Google Sheets**")
         st.info("""
         **ขั้นตอนการเปิดใช้งานฐานข้อมูลถาวร:**
-        1. นำ `gspread` และ `google-auth` ไปใส่ในไฟล์ `requirements.txt` บน GitHub
+        1. นำ `gspread`, `google-auth` และ `reportlab` ไปใส่ในไฟล์ `requirements.txt` บน GitHub
         2. ใส่การตั้งค่า `[sheets]` (URL ของ Google Sheet) และ `[gcp_service_account]` ในเมนู **Settings > Secrets** ของ Streamlit Cloud
         3. กดแชร์ Google Sheet แผ่นนั้นให้กับอีเมล Service Account ให้มีสิทธิ์เป็น **Editor (ผู้แก้ไข)**
         """)
@@ -1249,6 +1612,9 @@ def main():
 
     if 'confirm' in st.query_params:
         handle_confirmation()
+        return
+    elif 'final_confirm' in st.query_params:
+        handle_final_confirmation()
         return
 
     st.sidebar.markdown("### 🦷 ศบส.65 รักษาศุข บางบอน")
