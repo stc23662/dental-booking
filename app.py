@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ========== Custom CSS (ชิดซ้ายทั้งหมด ป้องกัน Markdown ตีความเป็น Code Block) ==========
+# ========== Custom CSS ==========
 CUSTOM_CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
 html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
@@ -98,10 +98,8 @@ button[kind="primary"] {
 </style>"""
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# รายการบริการทันตกรรม 4 หัตถการ
 SERVICES = ["ถอนฟัน", "อุดฟัน", "ขูดหินปูน", "ตรวจสุขภาพช่องปาก"]
 
-# กำหนดโครงสร้างตารางข้อมูลใน Google Sheets
 TABLE_SCHEMAS = {
     "appointments": ["id", "patient_id", "full_name", "id_card", "phone", "email", "service_type", "appointment_date", "appointment_time", "queue_number", "status", "token", "reminder_sent", "notes", "created_at"],
     "patients": ["id", "full_name", "id_card", "phone", "email", "created_at"],
@@ -110,21 +108,16 @@ TABLE_SCHEMAS = {
     "no_show_records": ["id", "appointment_id", "patient_id", "appointment_date", "status", "reported_by", "notes", "created_at"]
 }
 
-# ========== เชื่อมต่อ Google Sheets ==========
+# ========== เชื่อมต่อ Google Sheets พร้อม Cache จัดการ Quota 429 ==========
 @st.cache_resource
 def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     if "gcp_service_account" in st.secrets:
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scopes
-        )
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
         return gspread.authorize(creds)
     return None
 
+@st.cache_resource
 def get_spreadsheet():
     gc = get_gspread_client()
     if not gc:
@@ -134,29 +127,39 @@ def get_spreadsheet():
         return None
     try:
         sh = gc.open_by_url(sheet_url)
-        # ตรวจสอบและสร้างแท็บอัตโนมัติหากยังไม่มี
-        existing_sheets = [ws.title for ws in sh.worksheets()]
-        for title, headers in TABLE_SCHEMAS.items():
-            if title not in existing_sheets:
-                ws = sh.add_worksheet(title=title, rows=1000, cols=len(headers) + 2)
-                ws.append_row(headers)
         return sh
     except Exception as e:
         st.error(f"❌ ไม่สามารถเปิด Google Sheet ได้: {e}")
         return None
 
-def get_table_df(sh, table_name):
+@st.cache_resource
+def ensure_worksheets_initialized(_sh):
+    try:
+        existing = [ws.title for ws in _sh.worksheets()]
+        for title, headers in TABLE_SCHEMAS.items():
+            if title not in existing:
+                ws = _sh.add_worksheet(title=title, rows=1000, cols=len(headers) + 2)
+                ws.append_row(headers)
+    except Exception:
+        pass
+
+# แคชตารางข้อมูล 15 วินาที เพื่อป้องกัน Quota 429
+@st.cache_data(ttl=15, show_spinner=False)
+def get_table_df(table_name):
+    sh = get_spreadsheet()
+    if not sh:
+        return pd.DataFrame(columns=TABLE_SCHEMAS.get(table_name, []))
     try:
         ws = sh.worksheet(table_name)
         records = ws.get_all_records()
         df = pd.DataFrame(records)
-        expected_cols = TABLE_SCHEMAS[table_name]
-        for col in expected_cols:
+        expected = TABLE_SCHEMAS.get(table_name, [])
+        for col in expected:
             if col not in df.columns:
                 df[col] = None
         return df
     except Exception:
-        return pd.DataFrame(columns=TABLE_SCHEMAS[table_name])
+        return pd.DataFrame(columns=TABLE_SCHEMAS.get(table_name, []))
 
 # ========== ฟังก์ชันส่งอีเมล ==========
 def send_email(to_email: str, subject: str, body: str, cc_email: str = "dental665@gmail.com") -> bool:
@@ -190,8 +193,8 @@ def send_email(to_email: str, subject: str, body: str, cc_email: str = "dental66
         return False
 
 # ========== ฟังก์ชัน Blacklist ==========
-def check_blacklist(sh, id_card=None, phone=None, patient_id=None):
-    df_bl = get_table_df(sh, "blacklist")
+def check_blacklist(id_card=None, phone=None, patient_id=None):
+    df_bl = get_table_df("blacklist")
     if df_bl.empty:
         return None
     today_str = date.today().strftime('%Y-%m-%d')
@@ -211,16 +214,17 @@ def check_blacklist(sh, id_card=None, phone=None, patient_id=None):
             return match.iloc[0].to_dict()
     return None
 
-def add_to_blacklist(sh, patient_id, reason, days_penalty=30, reported_by="system"):
-    df_p = get_table_df(sh, "patients")
+def add_to_blacklist(patient_id, reason, days_penalty=30, reported_by="system"):
+    sh = get_spreadsheet()
+    df_p = get_table_df("patients")
     match_p = df_p[df_p['id'].astype(str) == str(patient_id)]
     if match_p.empty:
         return False
     p_info = match_p.iloc[0]
     
     ws_bl = sh.worksheet("blacklist")
-    df_bl = get_table_df(sh, "blacklist")
-    existing = check_blacklist(sh, patient_id=patient_id)
+    df_bl = get_table_df("blacklist")
+    existing = check_blacklist(patient_id=patient_id)
     
     until_d = (date.today() + timedelta(days=days_penalty)).strftime('%Y-%m-%d')
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -241,10 +245,12 @@ def add_to_blacklist(sh, patient_id, reason, days_penalty=30, reported_by="syste
             next_id, patient_id, str(p_info.get('full_name')), str(p_info.get('id_card')), 
             str(p_info.get('phone')), reason, 1, until_d, reported_by, now_str
         ])
+    st.cache_data.clear()
     return True
 
-def record_no_show(sh, appointment_id, reported_by="system", notes=""):
-    df_appts = get_table_df(sh, "appointments")
+def record_no_show(appointment_id, reported_by="system", notes=""):
+    sh = get_spreadsheet()
+    df_appts = get_table_df("appointments")
     match_a = df_appts[df_appts['id'].astype(str) == str(appointment_id)]
     if match_a.empty:
         return False
@@ -253,7 +259,6 @@ def record_no_show(sh, appointment_id, reported_by="system", notes=""):
     patient_id = a_info.get('patient_id')
     appt_date = a_info.get('appointment_date')
     
-    # อัปเดตสถานะใน appointments
     ws_a = sh.worksheet("appointments")
     records = ws_a.get_all_records()
     for idx, r in enumerate(records, start=2):
@@ -262,16 +267,15 @@ def record_no_show(sh, appointment_id, reported_by="system", notes=""):
             ws_a.update_cell(idx, headers.index('status') + 1, 'no_show')
             break
             
-    # บันทึกประวัติ no_show_records
     ws_ns = sh.worksheet("no_show_records")
-    df_ns = get_table_df(sh, "no_show_records")
+    df_ns = get_table_df("no_show_records")
     next_id = int(df_ns['id'].max()) + 1 if not df_ns.empty and df_ns['id'].max() else 1
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     ws_ns.append_row([next_id, appointment_id, patient_id, appt_date, 'no_show', reported_by, notes, now_str])
+    st.cache_data.clear()
     
-    # ตรวจสอบว่าใน 90 วันผิดนัดเกิน 2 ครั้งหรือไม่
     cutoff_date = (date.today() - timedelta(days=90)).strftime('%Y-%m-%d')
-    df_ns_all = get_table_df(sh, "no_show_records")
+    df_ns_all = get_table_df("no_show_records")
     patient_no_shows = df_ns_all[
         (df_ns_all['patient_id'].astype(str) == str(patient_id)) &
         (df_ns_all['appointment_date'].astype(str) >= cutoff_date) &
@@ -279,7 +283,7 @@ def record_no_show(sh, appointment_id, reported_by="system", notes=""):
     ]
     if len(patient_no_shows) >= 2:
         add_to_blacklist(
-            sh, patient_id, 
+            patient_id, 
             f"ไม่มาตามนัด {len(patient_no_shows)} ครั้งในรอบ 90 วัน", 
             days_penalty=30 * len(patient_no_shows), 
             reported_by="auto_system"
@@ -287,9 +291,9 @@ def record_no_show(sh, appointment_id, reported_by="system", notes=""):
     return True
 
 # ========== คำนวณช่วงเวลาว่างของวันที่เลือก ==========
-def get_available_slots(sh, appointment_date: date):
+def get_available_slots(appointment_date: date):
     date_str = appointment_date.strftime('%Y-%m-%d')
-    df_sched = get_table_df(sh, "daily_schedule")
+    df_sched = get_table_df("daily_schedule")
     if df_sched.empty:
         return [], "คลินิกยังไม่ได้เปิดรับจองในวันนี้"
         
@@ -302,7 +306,7 @@ def get_available_slots(sh, appointment_date: date):
         note = close_row.get('note', 'ปิดทำการพิเศษ')
         return [], f"ปิดทำการ ({note})"
         
-    df_appts = get_table_df(sh, "appointments")
+    df_appts = get_table_df("appointments")
     active_appts = df_appts[
         (df_appts['appointment_date'].astype(str) == date_str) & 
         (df_appts['status'].isin(['pending', 'confirmed']))
@@ -329,7 +333,7 @@ def get_available_slots(sh, appointment_date: date):
     return all_slots, "เปิดทำการ"
 
 # ========== หน้าจองคิวออนไลน์ (สำหรับคนไข้) ==========
-def show_booking_form(sh):
+def show_booking_form():
     st.markdown("""<div class="hero-banner">
         <h1>🦷 ระบบจองคิวทันตกรรม</h1>
         <p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน<br>กรุณากรอกข้อมูลส่วนตัว เลือกบริการ และนัดหมายวันเวลาที่สะดวกเข้ารับบริการ</p>
@@ -356,7 +360,7 @@ def show_booking_form(sh):
             max_date = min_date + timedelta(days=120)
             appointment_date = st.date_input("เลือกวันที่ต้องการนัดหมาย *", min_value=min_date, max_value=max_date, value=min_date + timedelta(days=1))
             
-        available_slots, status_msg = get_available_slots(sh, appointment_date)
+        available_slots, status_msg = get_available_slots(appointment_date)
         
         with col_slot:
             if not available_slots:
@@ -415,10 +419,10 @@ def show_booking_form(sh):
             st.error("❌ เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น")
             return
 
-        if check_blacklist(sh, id_card=id_card.strip()):
+        if check_blacklist(id_card=id_card.strip()):
             st.error("⚠️ บัญชีนี้ถูกระงับสิทธิ์ชั่วคราวเนื่องจากไม่มาตามเวลานัดหมาย กรุณาติดต่อคลินิก")
             return
-        if check_blacklist(sh, phone=phone.strip()):
+        if check_blacklist(phone=phone.strip()):
             st.error("⚠️ เบอร์โทรศัพท์นี้ถูกระงับสิทธิ์ชั่วคราว กรุณาติดต่อคลินิก")
             return
 
@@ -426,7 +430,7 @@ def show_booking_form(sh):
         date_str = appointment_date.strftime('%Y-%m-%d')
 
         # ตรวจสอบนัดหมายค้างอยู่ในระบบ
-        df_appts = get_table_df(sh, "appointments")
+        df_appts = get_table_df("appointments")
         if not df_appts.empty:
             active_existing = df_appts[
                 (df_appts['id_card'].astype(str) == id_card.strip()) &
@@ -440,15 +444,14 @@ def show_booking_form(sh):
                 st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{ex['service_type']}** ในวันที่ **{ex['appointment_date']}** ช่วงเวลา **{ex['appointment_time']} น.**{q_txt} อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเลื่อนหรือยกเลิกกรุณาติดต่อคลินิก)*")
                 return
 
-        # บันทึกคนไข้
+        sh = get_spreadsheet()
         ws_p = sh.worksheet("patients")
-        df_p = get_table_df(sh, "patients")
+        df_p = get_table_df("patients")
         p_match = df_p[df_p['id_card'].astype(str) == id_card.strip()]
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         if not p_match.empty:
             p_id = p_match.iloc[0]['id']
-            # อัปเดตข้อมูลคนไข้เดิม
             for idx, r in enumerate(ws_p.get_all_records(), start=2):
                 if str(r.get('id')) == str(p_id):
                     headers = ws_p.row_values(1)
@@ -473,6 +476,7 @@ def show_booking_form(sh):
             next_appt_id, p_id, full_name.strip(), id_card.strip(), phone.strip(), email.strip(),
             service_name, date_str, clean_time_label, next_q, 'pending', token, 0, notes, now_str
         ])
+        st.cache_data.clear()
 
         base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
         confirmation_url = f"{base_url}/?confirm={token}"
@@ -530,8 +534,9 @@ def show_booking_form(sh):
         st.success(f"🎉 **จองคิวสำเร็จ! ท่านได้ [คิวที่ {next_q}] ประจำวัน** (รหัสอ้างอิง `APPT-{next_appt_id:05d}`)\n\nข้อมูลถูกบันทึกลงระบบอย่างถาวรแล้ว กรุณาโทรยืนยันนัดหมายล่วงหน้า 1 วันทำการ ที่เบอร์ 02 453 0526 ต่อ 302")
 
 # ========== ยืนยันนัดผ่าน URL ==========
-def handle_confirmation(sh):
+def handle_confirmation():
     token = st.query_params.get('confirm')
+    sh = get_spreadsheet()
     ws = sh.worksheet("appointments")
     records = ws.get_all_records()
     found = None
@@ -555,6 +560,7 @@ def handle_confirmation(sh):
         if status == 'pending':
             headers = ws.row_values(1)
             ws.update_cell(row_idx, headers.index('status') + 1, 'confirmed')
+            st.cache_data.clear()
             st.success(f"✅ **ยืนยันนัดหมายสำเร็จ!** คุณ {name} ได้รับ **[{q_label}]** สำหรับวันที่ {appt_date} ช่วงเวลา {appt_time} น.")
             st.info("ℹ️ กรุณาโทรยืนยันนัดหมายล่วงหน้า 1 วันทำการ (โทร. 02 453 0526 ต่อ 302) และเดินทางมาถึงก่อนเวลานัดหมายอย่างน้อย 30 นาทีเท่านั้น")
         elif status == 'confirmed':
@@ -569,7 +575,7 @@ def handle_confirmation(sh):
         st.rerun()
 
 # ========== หน้า Dashboard แอดมิน ==========
-def show_admin_dashboard(sh):
+def show_admin_dashboard():
     try:
         allowed_admins = st.secrets["admin_auth"]["allowed_emails"]
         admin_password_correct = st.secrets["admin_auth"]["password"]
@@ -614,7 +620,8 @@ def show_admin_dashboard(sh):
         ]
     )
 
-    df_appts = get_table_df(sh, "appointments")
+    df_appts = get_table_df("appointments")
+    sh = get_spreadsheet()
 
     # 1. ภาพรวมสถิติ
     if menu == "📊 ภาพรวมสถิติ":
@@ -666,6 +673,7 @@ def show_admin_dashboard(sh):
                                 headers = ws_a.row_values(1)
                                 ws_a.update_cell(idx, headers.index('status') + 1, 'completed')
                                 break
+                        st.cache_data.clear()
                         st.success("บันทึกเข้ารับบริการสำเร็จ! คนไข้รายนี้สามารถจองคิวรับบริการครั้งต่อไปได้แล้ว")
                         st.rerun()
                 else:
@@ -698,7 +706,7 @@ def show_admin_dashboard(sh):
             with c_s2:
                 p_date = st.date_input("เลือกวันที่นัดหมาย *", min_value=date.today(), value=date.today() + timedelta(days=1))
             
-            avail_slots, s_msg = get_available_slots(sh, p_date)
+            avail_slots, s_msg = get_available_slots(p_date)
             with c_s3:
                 if not avail_slots:
                     st.selectbox("ช่วงเวลา *", [f"⛔ {s_msg}"], disabled=True)
@@ -725,7 +733,7 @@ def show_admin_dashboard(sh):
             elif len(p_idcard.strip()) != 13 or not p_idcard.strip().isdigit():
                 st.error("❌ เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น")
             else:
-                if check_blacklist(sh, id_card=p_idcard.strip()):
+                if check_blacklist(id_card=p_idcard.strip()):
                     st.error("⚠️ บัญชีนี้ถูกระงับสิทธิ์ชั่วคราวเนื่องจากไม่มาตามเวลานัดหมาย")
                     return
 
@@ -750,7 +758,7 @@ def show_admin_dashboard(sh):
 
                 # บันทึกคนไข้
                 ws_p = sh.worksheet("patients")
-                df_p = get_table_df(sh, "patients")
+                df_p = get_table_df("patients")
                 p_match = df_p[df_p['id_card'].astype(str) == p_idcard.strip()]
                 now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 email_save = p_email.strip() if p_email.strip() else ""
@@ -772,6 +780,7 @@ def show_admin_dashboard(sh):
                     new_appt_id, pt_id, p_name.strip(), p_idcard.strip(), p_phone.strip(), email_save,
                     p_service, p_date_str, p_slot_clean, next_q, t_stat, token, 0, final_notes, now_str
                 ])
+                st.cache_data.clear()
 
                 if send_mail_chk and email_save:
                     email_body = f"""
@@ -834,7 +843,7 @@ def show_admin_dashboard(sh):
         if c3.button("💾 บันทึกสถานะ", type="primary", use_container_width=True):
             target_stat = new_status[0]
             if target_stat == "no_show":
-                record_no_show(sh, appt_id, reported_by=st.session_state.admin_user, notes="เจ้าหน้าที่ระบุไม่มาตามนัด")
+                record_no_show(appt_id, reported_by=st.session_state.admin_user, notes="เจ้าหน้าที่ระบุไม่มาตามนัด")
                 st.warning(f"บันทึก No-Show ให้รหัสนัด {appt_id} เรียบร้อย")
             else:
                 ws_a = sh.worksheet("appointments")
@@ -843,6 +852,7 @@ def show_admin_dashboard(sh):
                         headers = ws_a.row_values(1)
                         ws_a.update_cell(idx, headers.index('status') + 1, target_stat)
                         break
+                st.cache_data.clear()
                 st.success(f"อัปเดตสถานะรหัสนัด {appt_id} สำเร็จ")
             st.rerun()
 
@@ -863,7 +873,7 @@ def show_admin_dashboard(sh):
         week_days_thai = ["วันจันทร์", "วันอังคาร", "วันพุธ", "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์", "วันอาทิตย์"]
         cols = st.columns(7)
         
-        df_sched = get_table_df(sh, "daily_schedule")
+        df_sched = get_table_df("daily_schedule")
 
         for i in range(7):
             cur_date = week_monday + timedelta(days=i)
@@ -932,7 +942,7 @@ def show_admin_dashboard(sh):
                         st.error("กรุณาเลือกวันในสัปดาห์อย่างน้อย 1 วัน")
                     else:
                         ws_s = sh.worksheet("daily_schedule")
-                        df_cur = get_table_df(sh, "daily_schedule")
+                        df_cur = get_table_df("daily_schedule")
                         
                         if clear_first and not df_cur.empty:
                             mask = (df_cur['schedule_date'].astype(str) >= b_start.strftime('%Y-%m-%d')) & (df_cur['schedule_date'].astype(str) <= b_end.strftime('%Y-%m-%d'))
@@ -956,6 +966,7 @@ def show_admin_dashboard(sh):
                             
                         if new_rows:
                             ws_s.append_rows(new_rows)
+                        st.cache_data.clear()
                         st.success(f"✅ บันทึก Slot {bs_time.strftime('%H:%M')}-{be_time.strftime('%H:%M')} น. ({bq_cap} คิว) รวม {len(new_rows)} วัน เรียบร้อยแล้ว")
                         st.rerun()
 
@@ -971,12 +982,13 @@ def show_admin_dashboard(sh):
                 
                 if st.form_submit_button("➕ เพิ่มช่วงเวลานี้ในวันที่เลือก", type="primary"):
                     ws_s = sh.worksheet("daily_schedule")
-                    df_cur = get_table_df(sh, "daily_schedule")
+                    df_cur = get_table_df("daily_schedule")
                     next_id = int(df_cur['id'].max()) + 1 if not df_cur.empty and df_cur['id'].max() else 1
                     ws_s.append_row([
                         next_id, s_date.strftime('%Y-%m-%d'), 1, 
                         s_start.strftime('%H:%M'), s_end.strftime('%H:%M'), s_cap, 'เปิดทำการ'
                     ])
+                    st.cache_data.clear()
                     st.success(f"✅ เพิ่ม Slot {s_start.strftime('%H:%M')}-{s_end.strftime('%H:%M')} น. ให้วันที่ {s_date.strftime('%d/%m/%Y')} เรียบร้อย")
                     st.rerun()
 
@@ -990,7 +1002,7 @@ def show_admin_dashboard(sh):
                 
                 if st.form_submit_button("🔴 สั่งปิดทำการทั้งวัน", type="primary"):
                     ws_s = sh.worksheet("daily_schedule")
-                    df_cur = get_table_df(sh, "daily_schedule")
+                    df_cur = get_table_df("daily_schedule")
                     if not df_cur.empty:
                         df_kept = df_cur[df_cur['schedule_date'].astype(str) != cl_date.strftime('%Y-%m-%d')]
                         ws_s.clear()
@@ -1000,6 +1012,7 @@ def show_admin_dashboard(sh):
                     
                     next_id = int(df_cur['id'].max()) + 1 if not df_cur.empty and df_cur['id'].max() else 1
                     ws_s.append_row([next_id, cl_date.strftime('%Y-%m-%d'), 0, "", "", 0, cl_note])
+                    st.cache_data.clear()
                     st.success(f"กำหนดให้วันที่ {cl_date.strftime('%d/%m/%Y')} ปิดทำการทั้งวันเรียบร้อย")
                     st.rerun()
 
@@ -1012,7 +1025,7 @@ def show_admin_dashboard(sh):
             col_del_r3.markdown("### ")
             if col_del_r3.button("🗑️ ล้าง Slot ในช่วงนี้", type="primary", use_container_width=True):
                 ws_s = sh.worksheet("daily_schedule")
-                df_cur = get_table_df(sh, "daily_schedule")
+                df_cur = get_table_df("daily_schedule")
                 if not df_cur.empty:
                     mask = (df_cur['schedule_date'].astype(str) >= del_from.strftime('%Y-%m-%d')) & (df_cur['schedule_date'].astype(str) <= del_to.strftime('%Y-%m-%d'))
                     del_cnt = mask.sum()
@@ -1021,6 +1034,7 @@ def show_admin_dashboard(sh):
                     ws_s.append_row(TABLE_SCHEMAS["daily_schedule"])
                     if not df_kept.empty:
                         ws_s.append_rows(df_kept[TABLE_SCHEMAS["daily_schedule"]].values.tolist())
+                    st.cache_data.clear()
                     st.success(f"✅ ล้าง Slot เรียบร้อยแล้วทั้งหมด {del_cnt} รายการ")
                 else:
                     st.warning("⚠️ ไม่พบรายการ Slot ในช่วงวันที่เลือก")
@@ -1029,7 +1043,7 @@ def show_admin_dashboard(sh):
             st.markdown("---")
             st.markdown("##### 📋 ตรวจสอบรายการ Slot ทั้งหมดในระบบ")
             view_d = st.date_input("เลือกดูตั้งแต่ช่วงวันที่", value=date.today() - timedelta(days=7))
-            df_cur = get_table_df(sh, "daily_schedule")
+            df_cur = get_table_df("daily_schedule")
             if not df_cur.empty:
                 v_mask = df_cur['schedule_date'].astype(str) >= view_d.strftime('%Y-%m-%d')
                 st.dataframe(df_cur[v_mask].sort_values(by=['schedule_date', 'start_time']), use_container_width=True)
@@ -1041,13 +1055,14 @@ def show_admin_dashboard(sh):
             del_id = cd1.number_input("ใส่ 'รหัส (ID)' ของ Slot ที่ต้องการลบเฉพาะจุด", min_value=1, step=1)
             if cd1.button("🗑️ ลบเฉพาะ Slot รหัสนี้"):
                 ws_s = sh.worksheet("daily_schedule")
-                df_cur = get_table_df(sh, "daily_schedule")
+                df_cur = get_table_df("daily_schedule")
                 if not df_cur.empty and (df_cur['id'].astype(str) == str(del_id)).any():
                     df_kept = df_cur[df_cur['id'].astype(str) != str(del_id)]
                     ws_s.clear()
                     ws_s.append_row(TABLE_SCHEMAS["daily_schedule"])
                     if not df_kept.empty:
                         ws_s.append_rows(df_kept[TABLE_SCHEMAS["daily_schedule"]].values.tolist())
+                    st.cache_data.clear()
                     st.success(f"ลบ Slot รหัส {del_id} สำเร็จ")
                 else:
                     st.warning(f"ไม่พบ Slot รหัส {del_id}")
@@ -1056,13 +1071,14 @@ def show_admin_dashboard(sh):
             del_all_date = cd2.date_input("หรือเลือกลบ Slot ทั้งหมดของวันใดวันหนึ่ง", value=date.today(), key="del_single_day")
             if cd2.button("🗑️ ล้างตารางเวลาทั้งหมดของวันนี้"):
                 ws_s = sh.worksheet("daily_schedule")
-                df_cur = get_table_df(sh, "daily_schedule")
+                df_cur = get_table_df("daily_schedule")
                 if not df_cur.empty and (df_cur['schedule_date'].astype(str) == del_all_date.strftime('%Y-%m-%d')).any():
                     df_kept = df_cur[df_cur['schedule_date'].astype(str) != del_all_date.strftime('%Y-%m-%d')]
                     ws_s.clear()
                     ws_s.append_row(TABLE_SCHEMAS["daily_schedule"])
                     if not df_kept.empty:
                         ws_s.append_rows(df_kept[TABLE_SCHEMAS["daily_schedule"]].values.tolist())
+                    st.cache_data.clear()
                     st.success(f"ล้างตารางเวลาของวันที่ {del_all_date.strftime('%d/%m/%Y')} เรียบร้อย")
                 else:
                     st.warning("ไม่พบ Slot ในวันที่เลือก")
@@ -1071,7 +1087,7 @@ def show_admin_dashboard(sh):
     # 5. ทะเบียนผู้ป่วย
     elif menu == "👥 ทะเบียนผู้ป่วย":
         st.subheader("👥 รายชื่อผู้ป่วยทั้งหมดในระบบ")
-        df_p = get_table_df(sh, "patients")
+        df_p = get_table_df("patients")
         if not df_p.empty:
             st.dataframe(df_p.sort_values(by=['id'], ascending=False), use_container_width=True)
         else:
@@ -1134,6 +1150,7 @@ def show_admin_dashboard(sh):
                             ws_a.update_cell(idx, headers.index('reminder_sent') + 1, 1)
                             break
                     sent_count += 1
+            st.cache_data.clear()
             st.success(f"ส่งการแจ้งเตือนสำเร็จทั้งหมด {sent_count}/{len(targets)} รายการ")
 
     # 7. จัดการ Blacklist
@@ -1142,7 +1159,7 @@ def show_admin_dashboard(sh):
         tab_bl1, tab_bl2 = st.tabs(["📋 รายชื่อผู้ถูกระงับสิทธิ์ & ปลดบล็อก", "➕ สั่งระงับสิทธิ์ (บล็อกผู้ป่วย)"])
         
         with tab_bl1:
-            df_bl = get_table_df(sh, "blacklist")
+            df_bl = get_table_df("blacklist")
             if not df_bl.empty:
                 st.dataframe(df_bl.sort_values(by=['blacklisted_until'], ascending=False), use_container_width=True)
                 st.markdown("---")
@@ -1158,6 +1175,7 @@ def show_admin_dashboard(sh):
                         ws_bl.append_row(TABLE_SCHEMAS["blacklist"])
                         if not df_kept.empty:
                             ws_bl.append_rows(df_kept[TABLE_SCHEMAS["blacklist"]].values.tolist())
+                        st.cache_data.clear()
                         st.success(f"✅ ปลดบล็อกรหัส {unblock_id} เรียบร้อยแล้ว")
                         st.rerun()
                     else:
@@ -1167,7 +1185,7 @@ def show_admin_dashboard(sh):
                 
         with tab_bl2:
             st.markdown("##### ➕ เพิ่มรายชื่อผู้ป่วยเข้าสู่ระบบระงับสิทธิ์")
-            df_p = get_table_df(sh, "patients")
+            df_p = get_table_df("patients")
             with st.form("form_manual_blacklist"):
                 if not df_p.empty:
                     patient_options = {row['id']: f"{row['full_name']} (บัตร: {row['id_card']}, โทร: {row['phone']})" for _, row in df_p.iterrows()}
@@ -1193,7 +1211,7 @@ def show_admin_dashboard(sh):
                         st.error("กรุณาระบุสาเหตุการระงับสิทธิ์")
                     else:
                         success = add_to_blacklist(
-                            sh, patient_id=selected_p_id, 
+                            patient_id=selected_p_id, 
                             reason=bl_reason.strip(), 
                             days_penalty=penalty_days[0], 
                             reported_by=st.session_state.admin_user
@@ -1207,7 +1225,7 @@ def show_admin_dashboard(sh):
     # 8. No-Show
     elif menu == "📋 ประวัติ No-Show":
         st.subheader("📋 บันทึกประวัติผู้ไม่มาตามนัดหมาย")
-        df_ns = get_table_df(sh, "no_show_records")
+        df_ns = get_table_df("no_show_records")
         if not df_ns.empty:
             st.dataframe(df_ns.sort_values(by=['appointment_date'], ascending=False), use_container_width=True)
         else:
@@ -1217,7 +1235,6 @@ def show_admin_dashboard(sh):
 def main():
     sh = get_spreadsheet()
     
-    # กรณีที่ยังไม่ได้ตั้งค่า Google Sheets Credentials
     if not sh:
         st.error("⚠️ **ยังไม่ได้เชื่อมต่อ Google Sheets**")
         st.info("""
@@ -1228,17 +1245,19 @@ def main():
         """)
         return
 
+    ensure_worksheets_initialized(sh)
+
     if 'confirm' in st.query_params:
-        handle_confirmation(sh)
+        handle_confirmation()
         return
 
     st.sidebar.markdown("### 🦷 ศบส.65 รักษาศุข บางบอน")
     page = st.sidebar.radio("เลือกหน้าต่างทำงาน", ["📅 นัดหมายบริการ", "⚙️ ผู้ดูแลระบบ"])
     
     if page == "📅 นัดหมายบริการ":
-        show_booking_form(sh)
+        show_booking_form()
     elif page == "⚙️ ผู้ดูแลระบบ":
-        show_admin_dashboard(sh)
+        show_admin_dashboard()
 
 if __name__ == "__main__":
     main()
