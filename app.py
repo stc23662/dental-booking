@@ -142,6 +142,11 @@ def safe_append_rows(ws, rows_values):
     cleaned = [[clean_sheet_val(x) for x in row] for row in rows_values]
     return ws.append_rows(cleaned)
 
+def append_appointment_mapped(ws, data_dict):
+    headers = [h.strip() for h in ws.row_values(1)]
+    row = [clean_sheet_val(data_dict.get(h, "")) for h in headers]
+    safe_append_row(ws, row)
+
 # ========== ฟังก์ชันคำนวณเวลาที่ต้องมาติดต่อห้องเวชระเบียน ==========
 def get_arrival_time_str(slot_label: str) -> str:
     try:
@@ -216,54 +221,12 @@ def generate_daily_appointments_pdf(df_day: pd.DataFrame, target_date: date) -> 
     
     elements = []
     
-    style_title = ParagraphStyle(
-        'TitleStyle',
-        fontName=font_bold,
-        fontSize=15,
-        leading=19,
-        alignment=1,
-        textColor=colors.HexColor('#0369a1')
-    )
-    style_sub = ParagraphStyle(
-        'SubTitleStyle',
-        fontName=font_bold,
-        fontSize=12,
-        leading=16,
-        alignment=1,
-        textColor=colors.HexColor('#1e293b')
-    )
-    style_meta = ParagraphStyle(
-        'MetaStyle',
-        fontName=font_name,
-        fontSize=9,
-        leading=12,
-        alignment=2,
-        textColor=colors.HexColor('#64748b')
-    )
-    style_th = ParagraphStyle(
-        'THStyle',
-        fontName=font_bold,
-        fontSize=9,
-        leading=11,
-        alignment=1,
-        textColor=colors.white
-    )
-    style_td = ParagraphStyle(
-        'TDStyle',
-        fontName=font_name,
-        fontSize=8.5,
-        leading=11,
-        alignment=0,
-        textColor=colors.HexColor('#1e293b')
-    )
-    style_td_center = ParagraphStyle(
-        'TDCenterStyle',
-        fontName=font_name,
-        fontSize=8.5,
-        leading=11,
-        alignment=1,
-        textColor=colors.HexColor('#1e293b')
-    )
+    style_title = ParagraphStyle('TitleStyle', fontName=font_bold, fontSize=15, leading=19, alignment=1, textColor=colors.HexColor('#0369a1'))
+    style_sub = ParagraphStyle('SubTitleStyle', fontName=font_bold, fontSize=12, leading=16, alignment=1, textColor=colors.HexColor('#1e293b'))
+    style_meta = ParagraphStyle('MetaStyle', fontName=font_name, fontSize=9, leading=12, alignment=2, textColor=colors.HexColor('#64748b'))
+    style_th = ParagraphStyle('THStyle', fontName=font_bold, fontSize=9, leading=11, alignment=1, textColor=colors.white)
+    style_td = ParagraphStyle('TDStyle', fontName=font_name, fontSize=8.5, leading=11, alignment=0, textColor=colors.HexColor('#1e293b'))
+    style_td_center = ParagraphStyle('TDCenterStyle', fontName=font_name, fontSize=8.5, leading=11, alignment=1, textColor=colors.HexColor('#1e293b'))
     
     d_be = target_date.strftime('%d/%m/') + str(target_date.year + 543)
     now_be = datetime.now().strftime('%d/%m/') + str(datetime.now().year + 543) + datetime.now().strftime(' %H:%M น.')
@@ -287,7 +250,6 @@ def generate_daily_appointments_pdf(df_day: pd.DataFrame, target_date: date) -> 
     ]
     
     table_data = [headers]
-    
     status_map = {
         'reconfirmed': '🟢 ยืนยันรอบ 2 (มาแน่นอน)',
         'confirmed': '🟡 ยืนยันรอบแรกแล้ว',
@@ -625,7 +587,7 @@ def show_booking_form():
                 </ul>
                 <p style="margin-bottom: 4px;"><b>3. การยกเลิกหรือเลื่อนนัด</b></p>
                 <ul style="margin-top: 0; margin-bottom: 0; padding-left: 20px; color: #334155;">
-                    <li><b>การแจ้งยกเลิก:</b> หากไม่สามารถมาตามนัดได้ โปรดแจ้งล่วงหน้าอย่างน้อย 1 วันทำการ ผ่านทางหมายเลขโทรศัพท์ <b>02 453 0526 ต่อ 302</b></li>
+                    <li><b>การแจ้งยกเลิก:</b> หากไม่สามารถมาตามนัดได้ ท่านสามารถกดยกเลิกผ่านอีเมลได้ตลอดเวลา หรือโทรแจ้งล่วงหน้า 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b></li>
                 </ul>
             </div>
         </div>
@@ -674,7 +636,7 @@ def show_booking_form():
             if not active_existing.empty:
                 ex = active_existing.iloc[0]
                 th_stat = "รอยืนยัน" if ex['status'] == "pending" else ("ยืนยันรอบ 2 แล้ว" if ex['status'] == "reconfirmed" else "ยืนยันแล้ว")
-                st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{ex['service_type']}** ในวันที่ **{ex['appointment_date']}** ช่วงเวลา **{ex['appointment_time']} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเลื่อนหรือยกเลิกกรุณาติดต่อคลินิก)*")
+                st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{ex['service_type']}** ในวันที่ **{ex['appointment_date']}** ช่วงเวลา **{ex['appointment_time']} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น หากต้องการเลื่อนหรือยกเลิก ท่านสามารถกดยกเลิกผ่านอีเมลเดิม หรือติดต่อคลินิก)*")
                 return
 
         sh = get_spreadsheet()
@@ -700,14 +662,29 @@ def show_booking_form():
         next_appt_id = int(pd.to_numeric(df_appts['id'], errors='coerce').fillna(0).max()) + 1 if not df_appts.empty else 1
         token = secrets.token_urlsafe(32)
 
-        safe_append_row(ws_a, [
-            next_appt_id, p_id, full_name.strip(), id_card.strip(), phone.strip(), email.strip(),
-            service_name, date_str, clean_time_label, 'pending', token, 0, notes or '', now_str
-        ])
+        appt_dict = {
+            "id": next_appt_id,
+            "patient_id": p_id,
+            "full_name": full_name.strip(),
+            "id_card": id_card.strip(),
+            "phone": phone.strip(),
+            "email": email.strip(),
+            "service_type": service_name,
+            "appointment_date": date_str,
+            "appointment_time": clean_time_label,
+            "queue_number": "",
+            "status": "pending",
+            "token": token,
+            "reminder_sent": 0,
+            "notes": notes or '',
+            "created_at": now_str
+        }
+        append_appointment_mapped(ws_a, appt_dict)
         st.cache_data.clear()
 
         base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
         confirmation_url = f"{base_url}/?confirm={token}"
+        cancel_url = f"{base_url}/?cancel={token}"
 
         email_body = f"""
         <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
@@ -732,12 +709,17 @@ def show_booking_form():
             </ul>
 
             <div style="text-align: center; margin: 25px 0;">
-                <a href="{confirmation_url}" style="background-color: #16a34a; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 15px; margin-bottom: 10px;">
+                <a href="{confirmation_url}" style="background-color: #16a34a; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 15px; margin: 5px;">
                     ✅ กดยืนยันได้รับข้อมูลการจองนัดหมาย
-                </a><br>
-                <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 10px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 14px;">
+                </a>
+                <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 14px; margin: 5px;">
                     📞 กดโทรยืนยันนัด: 02 453 0526 ต่อ 302
                 </a>
+                <div style="margin-top: 15px;">
+                    <a href="{cancel_url}" style="background-color: #dc2626; color: white; padding: 10px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px;">
+                        ❌ กดยกเลิกการนัดหมาย (หากไม่สะดวกมาตามนัด)
+                    </a>
+                </div>
             </div>
 
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-top: 20px; font-size: 13px; color: #334155;">
@@ -747,8 +729,7 @@ def show_booking_form():
                     <li><b>การลงทะเบียน:</b> กรุณามาติดต่อห้องเวชระเบียน<b>เวลา {arrival_time_str} (ก่อนเวลานัด 30 นาทีเท่านั้น)</b> เพื่อตรวจสอบสิทธิ์และทำประวัติ</li>
                     <li><b>เอกสารที่ต้องเตรียม:</b> โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> มาแสดงทุกครั้ง</li>
                     <li><b>ประวัติสุขภาพ:</b> หากมีโรคประจำตัว โปรดนำยาทั้งหมดมาด้วย หากแพ้ยา โปรดนำบัตรแพ้ยามาด้วย</li>
-                    <li><b>การมาสาย:</b> หากมาแสดงตนเกินเวลาที่กำหนด ทางศูนย์ขอสงวนสิทธิ์ยกเลิกนัดหมายทันที เพื่อไม่ให้กระทบคิวถัดไป</li>
-                    <li><b>การแจ้งยกเลิก:</b> หากไม่สามารถมาตามนัดได้ โปรดแจ้งล่วงหน้าอย่างน้อย 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b></li>
+                    <li><b>การยกเลิกนัด:</b> หากไม่สะดวกมาตามนัด ท่านสามารถกดปุ่มยกเลิกด้านบนได้ทันทีโดยไม่ถูกตัดสิทธิ์ และสามารถจองคิวใหม่ได้ตลอดเวลา</li>
                 </ul>
             </div>
             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
@@ -768,44 +749,75 @@ def show_booking_form():
                 <span style="font-size: 0.92rem; color: #374151;">(ก่อนเวลานัดหมาย 30 นาที เพื่อตรวจสอบสิทธิ์และทำประวัติ หากมาเกินเวลาขอสงวนสิทธิ์ยกเลิกนัด)</span>
             </div>
             <p style="font-size: 0.92rem; color: #065f46; margin: 10px 0 0 0;">
-                ✉️ ระบบได้ส่งรายละเอียดและลิงก์ยืนยันไปยังอีเมล <b>{email.strip()}</b> เรียบร้อยแล้ว โปรดโทรยืนยันนัดล่วงหน้า 1 วันทำการ โทร. <b>02 453 0526 ต่อ 302</b>
+                ✉️ ระบบได้ส่งรายละเอียดและลิงก์ยืนยันไปยังอีเมล <b>{email.strip()}</b> เรียบร้อยแล้ว หากไม่สะดวกสามารถกดยกเลิกผ่านอีเมลได้ตลอดเวลา
             </p>
         </div>
         """, unsafe_allow_html=True)
 
+# ========== ฟังก์ชันค้นหาแถวของ Token อัจฉริยะ (ค้นหาทั่วชีต) ==========
+def find_appointment_row_by_token(ws, token_to_find):
+    clean_token = str(token_to_find).strip().rstrip('/')
+    
+    try:
+        cell = ws.find(clean_token)
+        if cell and cell.row > 1:
+            return cell.row
+    except Exception:
+        pass
+        
+    try:
+        all_vals = ws.get_all_values()
+        for r_idx, row in enumerate(all_vals[1:], start=2):
+            if any(str(cell_v).strip() == clean_token for cell_v in row):
+                return r_idx
+    except Exception:
+        pass
+        
+    return None
+
 # ========== ยืนยันนัดหมายรอบแรกผ่าน URL ==========
 def handle_confirmation():
-    token = st.query_params.get('confirm')
-    sh = get_spreadsheet()
-    ws = sh.worksheet("appointments")
-    records = ws.get_all_records()
-    found = None
-    row_idx = None
-    
-    for idx, r in enumerate(records, start=2):
-        if str(r.get("token")) == str(token):
-            found = r
-            row_idx = idx
-            break
+    token_param = st.query_params.get('confirm')
+    if isinstance(token_param, list):
+        token_param = token_param[0] if token_param else ''
+    token = str(token_param).strip().rstrip('/')
 
     st.markdown("""<div class="hero-banner"><h1>🦷 ผลการยืนยันนัดหมาย</h1><p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p></div>""", unsafe_allow_html=True)
-    if found:
-        name = found.get('full_name')
-        appt_date = found.get('appointment_date')
-        appt_time = found.get('appointment_time')
-        status = found.get('status')
+
+    if not token:
+        st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
+        if st.button("🏠 กลับสู่หน้าหลัก"):
+            st.query_params.clear()
+            st.rerun()
+        return
+
+    sh = get_spreadsheet()
+    ws = sh.worksheet("appointments")
+    headers = [h.strip() for h in ws.row_values(1)]
+    
+    target_row = find_appointment_row_by_token(ws, token)
+    
+    if target_row:
+        row_vals = ws.row_values(target_row)
+        row_dict = dict(zip(headers, row_vals))
+        
+        name = row_dict.get('full_name') or (row_vals[2] if len(row_vals) > 2 else 'ผู้รับบริการ')
+        appt_date = row_dict.get('appointment_date') or (row_vals[7] if len(row_vals) > 7 else '')
+        appt_time = row_dict.get('appointment_time') or (row_vals[8] if len(row_vals) > 8 else '')
+        curr_status = row_dict.get('status')
         arrival_time = get_arrival_time_str(str(appt_time))
         
-        if status == 'pending':
-            headers = ws.row_values(1)
-            ws.update_cell(row_idx, headers.index('status') + 1, 'confirmed')
+        if curr_status == 'cancelled':
+            st.warning("⚠️ นัดหมายนี้ได้ถูกยกเลิกไปแล้ว ท่านสามารถทำการจองนัดหมายใหม่ได้ทันที")
+        else:
+            if "status" in headers:
+                ws.update_cell(target_row, headers.index("status") + 1, 'confirmed')
+            if "token" in headers:
+                ws.update_cell(target_row, headers.index("token") + 1, token)
+                
             st.cache_data.clear()
             st.success(f"✅ **ยืนยันได้รับข้อมูลการจองนัดหมายสำเร็จ!** คุณ {name} สำหรับวันที่ {appt_date} ช่วงเวลารักษา {appt_time} น.")
             st.info(f"📌 กรุณามาติดต่อห้องเวชระเบียนในเวลา **{arrival_time}** (ก่อนเวลานัด 30 นาที) และนำบัตรประชาชนตัวจริงมาด้วย")
-        elif status in ['confirmed', 'reconfirmed']:
-            st.info("ℹ️ นัดหมายนี้ได้รับการยืนยันข้อมูลเรียบร้อยแล้ว")
-        else:
-            st.warning("⚠️ นัดหมายนี้เสร็จสิ้นหรือถูกยกเลิกไปแล้ว")
     else:
         st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
     
@@ -815,30 +827,44 @@ def handle_confirmation():
 
 # ========== ยืนยันการเข้ารับบริการรอบที่ 2 (จากอีเมลแจ้งเตือน 1 วัน) ==========
 def handle_final_confirmation():
-    token = st.query_params.get('final_confirm')
-    sh = get_spreadsheet()
-    ws = sh.worksheet("appointments")
-    records = ws.get_all_records()
-    found = None
-    row_idx = None
-    
-    for idx, r in enumerate(records, start=2):
-        if str(r.get("token")) == str(token):
-            found = r
-            row_idx = idx
-            break
+    token_param = st.query_params.get('final_confirm')
+    if isinstance(token_param, list):
+        token_param = token_param[0] if token_param else ''
+    token = str(token_param).strip().rstrip('/')
 
     st.markdown("""<div class="hero-banner"><h1>🦷 ผลการยืนยันเข้ารับบริการ (รอบที่ 2)</h1><p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p></div>""", unsafe_allow_html=True)
-    if found:
-        name = found.get('full_name')
-        appt_date = found.get('appointment_date')
-        appt_time = found.get('appointment_time')
-        status = found.get('status')
+
+    if not token:
+        st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
+        if st.button("🏠 กลับสู่หน้าหลัก"):
+            st.query_params.clear()
+            st.rerun()
+        return
+
+    sh = get_spreadsheet()
+    ws = sh.worksheet("appointments")
+    headers = [h.strip() for h in ws.row_values(1)]
+    
+    target_row = find_appointment_row_by_token(ws, token)
+    
+    if target_row:
+        row_vals = ws.row_values(target_row)
+        row_dict = dict(zip(headers, row_vals))
+        
+        name = row_dict.get('full_name') or (row_vals[2] if len(row_vals) > 2 else 'ผู้รับบริการ')
+        appt_date = row_dict.get('appointment_date') or (row_vals[7] if len(row_vals) > 7 else '')
+        appt_time = row_dict.get('appointment_time') or (row_vals[8] if len(row_vals) > 8 else '')
+        curr_status = row_dict.get('status')
         arrival_time = get_arrival_time_str(str(appt_time))
         
-        if status in ['pending', 'confirmed', 'reconfirmed']:
-            headers = ws.row_values(1)
-            ws.update_cell(row_idx, headers.index('status') + 1, 'reconfirmed')
+        if curr_status == 'cancelled':
+            st.warning("⚠️ นัดหมายนี้ได้ถูกยกเลิกไปแล้ว ท่านสามารถทำการจองนัดหมายใหม่ได้ทันที")
+        else:
+            if "status" in headers:
+                ws.update_cell(target_row, headers.index("status") + 1, 'reconfirmed')
+            if "token" in headers:
+                ws.update_cell(target_row, headers.index("token") + 1, token)
+                
             st.cache_data.clear()
             st.success(f"🎉 **ยืนยันการเข้ารับบริการรอบที่ 2 สำเร็จเรียบร้อยแล้ว!**")
             st.markdown(f"""
@@ -851,12 +877,101 @@ def handle_final_confirmation():
                 </p>
             </div>
             """, unsafe_allow_html=True)
-        else:
-            st.warning("⚠️ นัดหมายนี้เสร็จสิ้นหรือถูกยกเลิกไปแล้ว")
     else:
         st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
         
     if st.button("🏠 กลับสู่หน้าหลัก"):
+        st.query_params.clear()
+        st.rerun()
+
+# ========== ประมวลผลการยกเลิกนัดหมาย (ส่งเมลล์ยืนยัน + ปลดล็อกให้จองใหม่ได้ ไม่บล็อก) ==========
+def handle_cancellation():
+    token_param = st.query_params.get('cancel')
+    if isinstance(token_param, list):
+        token_param = token_param[0] if token_param else ''
+    token = str(token_param).strip().rstrip('/')
+
+    st.markdown("""<div class="hero-banner" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">
+        <h1>❌ ผลการยกเลิกการนัดหมาย</h1>
+        <p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
+    </div>""", unsafe_allow_html=True)
+
+    if not token:
+        st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
+        if st.button("🏠 กลับสู่หน้าหลัก"):
+            st.query_params.clear()
+            st.rerun()
+        return
+
+    sh = get_spreadsheet()
+    ws = sh.worksheet("appointments")
+    headers = [h.strip() for h in ws.row_values(1)]
+    target_row = find_appointment_row_by_token(ws, token)
+
+    if target_row:
+        row_vals = ws.row_values(target_row)
+        row_dict = dict(zip(headers, row_vals))
+        
+        name = row_dict.get('full_name') or (row_vals[2] if len(row_vals) > 2 else 'ผู้รับบริการ')
+        email_addr = row_dict.get('email') or (row_vals[5] if len(row_vals) > 5 else '')
+        appt_date = row_dict.get('appointment_date') or (row_vals[7] if len(row_vals) > 7 else '')
+        appt_time = row_dict.get('appointment_time') or (row_vals[8] if len(row_vals) > 8 else '')
+        service = row_dict.get('service_type') or (row_vals[6] if len(row_vals) > 6 else '')
+        curr_status = row_dict.get('status')
+
+        if curr_status == 'cancelled':
+            st.info("ℹ️ การนัดหมายนี้ได้รับการยกเลิกไปก่อนหน้านี้เรียบร้อยแล้ว ท่านสามารถทำการจองใหม่ได้ทันที")
+        else:
+            if "status" in headers:
+                ws.update_cell(target_row, headers.index("status") + 1, 'cancelled')
+            st.cache_data.clear()
+
+            # ส่งอีเมลยืนยันการยกเลิกกลับไปหาคนไข้
+            if email_addr and str(email_addr).strip():
+                base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
+                cancel_email_body = f"""
+                <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
+                    <div style="background: #dc2626; padding: 16px; border-radius: 8px; text-align: center; color: white;">
+                        <h2 style="margin:0;">แจ้งยกเลิกการนัดหมายสำเร็จ</h2>
+                        <p style="margin:5px 0 0 0; font-size: 14px;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
+                    </div>
+                    <p style="margin-top: 20px;">เรียนคุณ <b>{name}</b>,</p>
+                    <p>ระบบได้ทำการยกเลิกการนัดหมายบริการทันตกรรมของท่านเรียบร้อยแล้ว รายละเอียดเดิม:</p>
+                    <ul>
+                        <li><b>บริการ:</b> {service}</li>
+                        <li><b>วันที่นัดหมายเดิม:</b> {appt_date}</li>
+                        <li><b>ช่วงเวลาเดิม:</b> {appt_time} น.</li>
+                    </ul>
+                    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin: 20px 0; color: #166534;">
+                        <b>✅ ท่านสามารถทำการจองนัดหมายรอบใหม่ได้ทันที</b><br>
+                        การยกเลิกนัดล่วงหน้านี้ <b>ไม่มีผลต่อสิทธิ์การรักษา และท่านไม่ถูกระงับสิทธิ์ใดๆ</b> ในระบบทั้งสิ้น
+                    </div>
+                    <div style="text-align: center; margin: 25px 0;">
+                        <a href="{base_url}" style="background-color: #0284c7; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                            📅 กดที่นี่เพื่อทำการจองคิวใหม่
+                        </a>
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                    <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน | โทร. 02 453 0526 ต่อ 302 | dental665@gmail.com</p>
+                </div>
+                """
+                send_email(email_addr.strip(), "แจ้งยกเลิกการนัดหมายทันตกรรมสำเร็จ (ท่านสามารถจองใหม่ได้)", cancel_email_body)
+
+            st.success("✅ **ท่านได้ทำการยกเลิกการนัดหมายสำเร็จแล้ว!**")
+            st.markdown(f"""
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px; margin: 15px 0;">
+                <p style="margin: 0; font-size: 1.05rem; color: #334155;">
+                    ระบบได้ยกเลิกนัดหมายคุณ <b>{name}</b> ในวันที่ <b>{appt_date}</b> ช่วงเวลา <b>{appt_time} น.</b> เรียบร้อยแล้ว
+                </p>
+                <p style="margin: 8px 0 0 0; color: #16a34a; font-weight: bold;">
+                    🎉 สิทธิ์ของท่านได้รับการปลดล็อกแล้ว ท่านสามารถเลือกวันเวลาเพื่อจองคิวนัดหมายใหม่ได้ทันที โดยไม่มีการระงับสิทธิ์ใดๆ
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.error("❌ ลิงก์ไม่ถูกต้องหรือหมดอายุการใช้งาน")
+
+    if st.button("📅 ไปที่หน้าจองคิวใหม่", type="primary"):
         st.query_params.clear()
         st.rerun()
 
@@ -1065,13 +1180,29 @@ def show_admin_dashboard():
                 t_stat = 'confirmed' if "confirmed" in p_status else 'pending'
                 final_notes = f"[{channel}] {p_note}".strip()
 
-                safe_append_row(ws_a, [
-                    new_appt_id, pt_id, p_name.strip(), p_idcard.strip(), p_phone.strip(), email_save,
-                    p_service, p_date_str, p_slot_clean, t_stat, token, 0, final_notes, now_str
-                ])
+                admin_appt_dict = {
+                    "id": new_appt_id,
+                    "patient_id": pt_id,
+                    "full_name": p_name.strip(),
+                    "id_card": p_idcard.strip(),
+                    "phone": p_phone.strip(),
+                    "email": email_save,
+                    "service_type": p_service,
+                    "appointment_date": p_date_str,
+                    "appointment_time": p_slot_clean,
+                    "queue_number": "",
+                    "status": t_stat,
+                    "token": token,
+                    "reminder_sent": 0,
+                    "notes": final_notes,
+                    "created_at": now_str
+                }
+                append_appointment_mapped(ws_a, admin_appt_dict)
                 st.cache_data.clear()
 
                 if send_mail_chk and email_save:
+                    base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
+                    cancel_url = f"{base_url}/?cancel={token}"
                     email_body = f"""
                     <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
                         <div style="background: #0284c7; padding: 16px; border-radius: 8px; text-align: center; color: white;">
@@ -1093,9 +1224,14 @@ def show_admin_dashboard():
                             <li><b>ช่องทางการนัด:</b> {channel}</li>
                         </ul>
                         <div style="text-align: center; margin: 20px 0;">
-                            <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                            <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; margin: 5px;">
                                 📞 โทรยืนยันนัด/สอบถาม: 02 453 0526 ต่อ 302
                             </a>
+                            <div style="margin-top: 10px;">
+                                <a href="{cancel_url}" style="background-color: #dc2626; color: white; padding: 8px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 12px;">
+                                    ❌ กดยกเลิกการนัดหมาย
+                                </a>
+                            </div>
                         </div>
                         <p style="font-size: 13px; color: #64748b;">* กรุณาเดินทางมาถึงห้องเวชระเบียนเวลา {arrival_time_str} และนำบัตรประชาชนตัวจริงมาด้วยทุกครั้ง</p>
                     </div>
@@ -1450,10 +1586,10 @@ def show_admin_dashboard():
         else:
             st.info("ยังไม่มีข้อมูลผู้ป่วย")
 
-    # 6. ระบบส่งแจ้งเตือน
+    # 6. ระบบส่งแจ้งเตือน (มีปุ่มกดยืนยันรอบที่ 2 และปุ่มยกเลิก)
     elif menu == "📧 ระบบส่งแจ้งเตือน":
         st.subheader("📧 ส่งอีเมลแจ้งเตือนล่วงหน้า 1 วัน")
-        st.caption("ระบบจะส่งอีเมลแจ้งเตือนนัดหมาย และให้คนไข้กดยืนยันการเข้ารับบริการรอบที่ 2 (สถานะจะเปลี่ยนเป็นสีเขียวในระบบ)")
+        st.caption("ระบบจะส่งอีเมลแจ้งเตือนนัดหมาย และให้คนไข้กดยืนยันการเข้ารับบริการรอบที่ 2 (สถานะจะเปลี่ยนเป็นสีเขียวในระบบ) หรือกดยกเลิกนัดได้ทันที")
         
         if st.button("🚀 ส่งอีเมลแจ้งเตือนทันที", type="primary"):
             tomorrow_str = (date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -1478,6 +1614,7 @@ def show_admin_dashboard():
                 token = row.get('token')
                 arrival_time = get_arrival_time_str(str(appt_t))
                 final_confirm_url = f"{base_url}/?final_confirm={token}"
+                cancel_url = f"{base_url}/?cancel={token}"
                 
                 body = f"""
                 <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; line-height: 1.6; max-width: 600px; margin: auto;">
@@ -1495,12 +1632,17 @@ def show_admin_dashboard():
                     </div>
 
                     <div style="text-align: center; margin: 25px 0;">
-                        <a href="{final_confirm_url}" style="background-color: #16a34a; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                        <a href="{final_confirm_url}" style="background-color: #16a34a; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 15px; margin: 5px;">
                             ✅ กดยืนยันการเข้ารับบริการ (ยืนยันรอบที่ 2)
-                        </a><br><br>
-                        <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 10px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px;">
+                        </a>
+                        <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 12px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px; margin: 5px;">
                             📞 กดโทรยืนยันนัด: 02 453 0526 ต่อ 302
                         </a>
+                        <div style="margin-top: 15px;">
+                            <a href="{cancel_url}" style="background-color: #dc2626; color: white; padding: 10px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px;">
+                                ❌ กดยกเลิกการนัดหมาย (หากไม่สะดวกมาตามนัด)
+                            </a>
+                        </div>
                     </div>
 
                     <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 10px 14px; margin: 15px 0; font-size: 13px; color: #334155;">
@@ -1508,8 +1650,7 @@ def show_admin_dashboard():
                         <ul style="margin: 5px 0 0 0; padding-left: 18px; line-height: 1.6;">
                             <li>กรุณาเดินทางมาถึงห้องเวชระเบียน<b>เวลา {arrival_time} (ก่อนเวลา 30 นาทีเท่านั้น)</b> เพื่อทำประวัติและตรวจสอบสิทธิ์</li>
                             <li>โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> และยาประจำตัว/บัตรแพ้ยา (ถ้ามี) มาด้วยทุกครั้ง</li>
-                            <li>หากมาสายเกินเวลาที่กำหนด ทางศูนย์ขอสงวนสิทธิ์ยกเลิกนัดหมายทันที</li>
-                            <li>หากต้องการยกเลิก/เลื่อนนัด โปรดแจ้งล่วงหน้า โทร. <b>02 453 0526 ต่อ 302</b></li>
+                            <li>หากไม่สะดวกมาตามนัด ท่านสามารถกดปุ่มยกเลิกด้านบนได้ทันทีโดยไม่ถูกตัดสิทธิ์ และสามารถจองคิวใหม่ได้ตลอดเวลา</li>
                         </ul>
                     </div>
                     <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
@@ -1619,11 +1760,15 @@ def main():
 
     ensure_worksheets_initialized(sh)
 
+    # ตรวจสอบพารามิเตอร์ URL (ยืนยันรอบแรก / ยืนยันรอบสอง / ยกเลิกนัด)
     if 'confirm' in st.query_params:
         handle_confirmation()
         return
     elif 'final_confirm' in st.query_params:
         handle_final_confirmation()
+        return
+    elif 'cancel' in st.query_params:
+        handle_cancellation()
         return
 
     st.sidebar.markdown("### 🦷 ศบส.65 รักษาศุข บางบอน")
