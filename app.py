@@ -111,6 +111,33 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 SERVICES = ["ถอนฟัน", "อุดฟัน", "ขูดหินปูน", "ตรวจสุขภาพช่องปาก"]
 
+# บัญชีเจ้าหน้าที่ที่ได้รับอนุญาต (Username: Password)
+DEFAULT_ADMIN_CREDENTIALS = {
+    "arsm": "dent665",
+    "doc02": "dent665"
+}
+
+def verify_admin_login(username: str, password: str) -> bool:
+    if not username or not password:
+        return False
+    u = username.strip().lower()
+    p = password.strip()
+    
+    # ตรวจสอบกับ secrets หากมีการตั้งค่าไว้
+    if "admin_users" in st.secrets:
+        try:
+            sec_users = {str(k).strip().lower(): str(v).strip() for k, v in st.secrets["admin_users"].items()}
+            if u in sec_users and sec_users[u] == p:
+                return True
+        except Exception:
+            pass
+            
+    # ตรวจสอบกับค่าเริ่มต้น (arsm / doc02: dent665)
+    if u in DEFAULT_ADMIN_CREDENTIALS and DEFAULT_ADMIN_CREDENTIALS[u] == p:
+        return True
+        
+    return False
+
 TABLE_SCHEMAS = {
     "appointments": ["id", "patient_id", "full_name", "id_card", "phone", "email", "service_type", "appointment_date", "appointment_time", "status", "token", "reminder_sent", "notes", "created_at"],
     "patients": ["id", "full_name", "id_card", "phone", "email", "created_at"],
@@ -658,24 +685,18 @@ def show_booking_form():
             </div>
             """, unsafe_allow_html=True)
 
+            # เข้าสู่ระบบด้วย Username & Password เพื่อทดสอบ
             with st.expander("🔑 เข้าสู่ระบบสำหรับเจ้าหน้าที่ (เพื่อทดสอบระบบขณะปิดปรับปรุง)"):
-                try:
-                    allowed_admins = st.secrets["admin_auth"]["allowed_emails"]
-                    admin_password_correct = st.secrets["admin_auth"]["password"]
-                except KeyError:
-                    allowed_admins = ["healtheducation.hc65@gmail.com", "dental665@gmail.com"]
-                    admin_password_correct = "admin123"
-
-                test_email = st.selectbox("เลือกบัญชีเจ้าหน้าที่", allowed_admins, key="test_admin_email")
-                test_pwd = st.text_input("รหัสผ่านผู้ดูแลระบบ", type="password", key="test_admin_pwd")
+                test_username = st.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="เช่น arsm, doc02", key="test_admin_user")
+                test_pwd = st.text_input("รหัสผ่าน", type="password", key="test_admin_pwd")
                 if st.button("🔓 เข้าสู่โหมดทดสอบการจอง", type="primary", use_container_width=True):
-                    if test_pwd == admin_password_correct:
-                        st.session_state.admin_user = test_email
+                    if verify_admin_login(test_username, test_pwd):
+                        st.session_state.admin_user = test_username.strip().lower()
                         st.session_state.is_admin = True
                         st.success("เข้าสู่โหมดทดสอบสำเร็จ!")
                         st.rerun()
                     else:
-                        st.error("❌ รหัสผ่านไม่ถูกต้อง")
+                        st.error("❌ ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง")
             return
         else:
             st.markdown(f"""
@@ -851,7 +872,6 @@ def show_booking_form():
                     </div>
                 </div>
 
-                <!-- กล่องเวลาที่ต้องมาติดต่อห้องเวชระเบียน ขนาดใหญ่เด่นชัด สีแดง -->
                 <div style="background-color: #fef2f2; border: 2.5px dashed #ef4444; border-radius: 12px; padding: 18px 12px; text-align: center; margin-top: 10px;">
                     <span style="font-size: 16px; color: #991b1b; font-weight: 800; letter-spacing: 0.5px;">🏥 เวลาที่ต้องมาติดต่อห้องเวชระเบียน</span><br>
                     <span style="font-size: 38px; color: #dc2626; font-weight: 900; line-height: 1.3; display: block; margin: 4px 0;">{arrival_time_str}</span>
@@ -859,14 +879,12 @@ def show_booking_form():
                 </div>
             </div>
 
-            <!-- กล่องแจ้งเตือนล่วงหน้า 1 วัน -->
             <div style="text-align: center; background-color: #fffbeb; border: 2px solid #fde68a; border-radius: 12px; padding: 16px 20px; margin: 22px 0;">
                 <p style="margin: 0; color: #b45309; font-weight: 800; font-size: 16px;">
                     ⏰ 1 วันก่อนถึงวันนัดหมาย ให้ท่านตรวจสอบ E-mail อีกครั้ง เพื่อกดยืนยันการเข้ารับบริการ
                 </p>
             </div>
 
-            <!-- ปุ่มยกเลิกการนัดหมาย สีแดงเด่นชัด -->
             <div style="text-align: center; margin: 30px 0 25px 0;">
                 <p style="font-size: 14px; color: #64748b; margin-bottom: 12px;">หากท่านไม่สะดวกเข้ารับบริการตามวันเวลาดังกล่าว:</p>
                 <a href="{cancel_url}" style="background-color: #dc2626; color: white !important; padding: 14px 34px; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 15px; display: inline-block; box-shadow: 0 4px 10px rgba(220, 38, 38, 0.3);">
@@ -874,7 +892,6 @@ def show_booking_form():
                 </a>
             </div>
 
-            <!-- เงื่อนไขและข้อตกลงฉบับเต็ม -->
             {TERMS_AND_CONDITIONS_HTML}
 
             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0 12px 0;">
@@ -1105,30 +1122,23 @@ def handle_cancellation():
         st.query_params.clear()
         st.rerun()
 
-# ========== หน้า Dashboard แอดมิน ==========
+# ========== หน้า Dashboard แอดมิน (เข้าสู่ระบบด้วย Username & Password) ==========
 def show_admin_dashboard():
-    try:
-        allowed_admins = st.secrets["admin_auth"]["allowed_emails"]
-        admin_password_correct = st.secrets["admin_auth"]["password"]
-    except KeyError:
-        allowed_admins = ["healtheducation.hc65@gmail.com", "dental665@gmail.com"]
-        admin_password_correct = "admin123"
-
     if "admin_user" not in st.session_state:
         st.session_state.admin_user = None
 
     if not st.session_state.admin_user:
         st.sidebar.subheader("🔒 เข้าสู่ระบบเจ้าหน้าที่")
-        user_email = st.sidebar.selectbox("เลือกบัญชีผู้ปฏิบัติงาน", allowed_admins)
-        pwd = st.sidebar.text_input("รหัสผ่านผู้ดูแล", type="password")
+        user_input = st.sidebar.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="เช่น arsm, doc02")
+        pwd = st.sidebar.text_input("รหัสผ่าน", type="password")
         if st.sidebar.button("เข้าสู่ระบบ", type="primary", use_container_width=True):
-            if pwd == admin_password_correct:
-                st.session_state.admin_user = user_email
+            if verify_admin_login(user_input, pwd):
+                st.session_state.admin_user = user_input.strip().lower()
                 st.session_state.is_admin = True
                 st.rerun()
             else:
-                st.sidebar.error("❌ รหัสผ่านไม่ถูกต้อง")
-        st.info("กรุณากรอกรหัสผ่านทางแถบด้านซ้ายเพื่อเข้าจัดการระบบ")
+                st.sidebar.error("❌ ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง")
+        st.info("กรุณากรอกชื่อผู้ใช้งานและรหัสผ่านทางแถบด้านซ้ายเพื่อเข้าจัดการระบบ")
         return
 
     # แถบควบคุมสถานะระบบ (เปิด/ปิดระบบจองคิวออนไลน์)
@@ -1151,7 +1161,7 @@ def show_admin_dashboard():
 
     st.markdown("---")
 
-    st.sidebar.success(f"👤 ผู้ใช้งาน:\n{st.session_state.admin_user}")
+    st.sidebar.success(f"👤 ผู้ใช้งาน: **{st.session_state.admin_user}**")
     st.sidebar.caption(f"สถานะระบบ: {'🟢 เปิดบริการ' if sys_open else '🔴 ปิดปรับปรุง'}")
     if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=True):
         st.session_state.admin_user = None
@@ -1772,7 +1782,7 @@ def show_admin_dashboard():
                     <p style="margin-top: 25px; font-size: 16px; color: #1e293b;">เรียนคุณ <b>{name}</b>,</p>
                     <p style="font-size: 15px; color: #334155; margin-bottom: 20px;">ท่านมีนัดหมายบริการทันตกรรมในวันพรุ่งนี้ โปรดตรวจสอบรายละเอียดและกดยืนยันการเข้ารับบริการ:</p>
                     
-                    <!-- การ์ดแสดงข้อมูลนัดหมายตัวใหญ่ ชัดเจน -->
+                    <!-- การ์ดแสดงข้อมูลนัดหมายรอบ 2 ขนาดใหญ่ ชัดเจน -->
                     <div style="background-color: #ffffff; border: 2.5px solid #0284c7; border-radius: 14px; padding: 22px; margin: 20px 0; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.08);">
                         <div style="border-bottom: 1.5px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 12px;">
                             <span style="font-size: 14px; color: #64748b; font-weight: bold; text-transform: uppercase;">บริการที่นัดหมาย</span><br>
