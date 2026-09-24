@@ -627,7 +627,7 @@ if hasattr(st, "dialog"):
                 </p>
             </div>
             <p style="font-size: 0.95rem; color: #64748b; margin-top: 15px;">
-                ⏰ 1 วันก่อนถึงวันนัดหมาย ให้ท่านตรวจสอบ E-mail อีกครั้งเพื่อกดยืนยันการเข้ารับบริการ
+                ⏰ 1 วันก่อนถึงวันนัดหมาย ให้ท่านตรวจสอบ E-mail อีกครั้ง เพื่อกดยืนยันการเข้ารับบริการ
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -659,7 +659,6 @@ def show_booking_form():
             </div>
             """, unsafe_allow_html=True)
 
-            # กล่องเข้าสู่ระบบสำหรับแอดมินเพื่อทดสอบระบบจองคิว
             with st.expander("🔑 เข้าสู่ระบบสำหรับเจ้าหน้าที่ (เพื่อทดสอบระบบขณะปิดปรับปรุง)"):
                 try:
                     allowed_admins = st.secrets["admin_auth"]["allowed_emails"]
@@ -680,7 +679,6 @@ def show_booking_form():
                         st.error("❌ รหัสผ่านไม่ถูกต้อง")
             return
         else:
-            # กรณีแอดมินล็อกอินอยู่แล้ว ให้แสดงแถบสีแดงเตือน แต่เปิดฟอร์มให้ทดสอบได้ตามปกติ
             st.markdown(f"""
             <div style="background-color: #fef2f2; border: 2px solid #ef4444; border-radius: 12px; padding: 14px 20px; margin-bottom: 20px;">
                 <span style="font-size: 1.1rem; color: #b91c1c; font-weight: bold;">
@@ -825,42 +823,62 @@ def show_booking_form():
         base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
         cancel_url = f"{base_url}/?cancel={token}"
 
-        # อีเมลแจ้งคนไข้หลังลงทะเบียน
+        # อีเมลแจ้งคนไข้หลังลงทะเบียน (ปรับแต่งข้อมูลขนาดใหญ่ ชัดเจน พร้อมกล่องไฮไลต์)
         email_body = f"""
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
-            <div style="background: #0284c7; padding: 18px; border-radius: 8px; text-align: center; color: white;">
-                <h2 style="margin:0; font-size: 20px;">ท่านได้ลงทะเบียนนัดหมายบริการทันตกรรมสำเร็จ</h2>
-                <p style="margin:5px 0 0 0; font-size: 14px;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 620px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 14px;">
+            <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 20px; border-radius: 10px; text-align: center; color: white;">
+                <h2 style="margin:0; font-size: 22px; font-weight: 800;">ท่านได้ลงทะเบียนนัดหมายบริการทันตกรรมสำเร็จ</h2>
+                <p style="margin:6px 0 0 0; font-size: 15px; opacity: 0.95;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
             </div>
             
-            <p style="margin-top: 25px; font-size: 15px;">เรียนคุณ <b>{full_name}</b>,</p>
-            <p style="font-size: 14px; color: #334155;">ท่านได้ทำการลงทะเบียนนัดหมายบริการทันตกรรมเรียบร้อยแล้ว โดยมีรายละเอียดการนัดหมายดังนี้:</p>
+            <p style="margin-top: 25px; font-size: 16px; color: #1e293b;">เรียนคุณ <b>{full_name}</b>,</p>
+            <p style="font-size: 15px; color: #334155; margin-bottom: 20px;">ระบบได้รับการลงทะเบียนนัดหมายบริการทันตกรรมของท่านเรียบร้อยแล้ว โดยมีรายละเอียดการนัดหมายดังนี้:</p>
             
-            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin: 18px 0;">
-                <ul style="margin: 0; padding-left: 20px; line-height: 1.9; font-size: 14px; color: #1e293b;">
-                    <li><b>บริการที่นัดหมาย:</b> {service_name}</li>
-                    <li><b>วันที่เข้ารับบริการ:</b> {appointment_date.strftime('%d/%m/%Y')}</li>
-                    <li><b>ช่วงเวลาเข้ารับการรักษา:</b> {clean_time_label} น.</li>
-                    <li><b>เวลาที่ต้องมาติดต่อห้องเวชระเบียน:</b> <b style="color: #dc2626; font-size: 16px;">{arrival_time_str}</b></li>
-                </ul>
+            <!-- การ์ดแสดงข้อมูลนัดหมายตัวใหญ่ ชัดเจน -->
+            <div style="background-color: #ffffff; border: 2.5px solid #0284c7; border-radius: 14px; padding: 22px; margin: 20px 0; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.08);">
+                <div style="border-bottom: 1.5px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 12px;">
+                    <span style="font-size: 14px; color: #64748b; font-weight: bold; text-transform: uppercase;">บริการที่นัดหมาย</span><br>
+                    <span style="font-size: 24px; color: #0f172a; font-weight: 800;">🦷 {service_name}</span>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 15px;">
+                    <div style="width: 50%;">
+                        <span style="font-size: 14px; color: #64748b; font-weight: bold;">วันที่เข้ารับบริการ</span><br>
+                        <span style="font-size: 22px; color: #0284c7; font-weight: 800;">📅 {appointment_date.strftime('%d/%m/%Y')}</span>
+                    </div>
+                    <div style="width: 50%;">
+                        <span style="font-size: 14px; color: #64748b; font-weight: bold;">ช่วงเวลาเข้ารับการรักษา</span><br>
+                        <span style="font-size: 22px; color: #0f172a; font-weight: 800;">⏰ {clean_time_label} น.</span>
+                    </div>
+                </div>
+
+                <!-- กล่องเวลาที่ต้องมาติดต่อห้องเวชระเบียน ขนาดใหญ่เด่นชัด สีแดง -->
+                <div style="background-color: #fef2f2; border: 2.5px dashed #ef4444; border-radius: 12px; padding: 18px 12px; text-align: center; margin-top: 10px;">
+                    <span style="font-size: 16px; color: #991b1b; font-weight: 800; letter-spacing: 0.5px;">🏥 เวลาที่ต้องมาติดต่อห้องเวชระเบียน</span><br>
+                    <span style="font-size: 38px; color: #dc2626; font-weight: 900; line-height: 1.3; display: block; margin: 4px 0;">{arrival_time_str}</span>
+                    <span style="font-size: 13px; color: #b91c1c; font-weight: 600;">(ต้องมาติดต่อในเวลาดังกล่าวเพื่อทำประวัติและตรวจสิทธิ์ หากเกินเวลาขอยกเลิกนัดทันที)</span>
+                </div>
             </div>
 
-            <div style="text-align: center; background-color: #fffbeb; border: 2px solid #fde68a; border-radius: 10px; padding: 14px 18px; margin: 22px 0;">
-                <p style="margin: 0; color: #b45309; font-weight: bold; font-size: 15px;">
+            <!-- กล่องแจ้งเตือนล่วงหน้า 1 วัน -->
+            <div style="text-align: center; background-color: #fffbeb; border: 2px solid #fde68a; border-radius: 12px; padding: 16px 20px; margin: 22px 0;">
+                <p style="margin: 0; color: #b45309; font-weight: 800; font-size: 16px;">
                     ⏰ 1 วันก่อนถึงวันนัดหมาย ให้ท่านตรวจสอบ E-mail อีกครั้ง เพื่อกดยืนยันการเข้ารับบริการ
                 </p>
             </div>
 
-            <div style="text-align: center; margin: 28px 0 20px 0;">
-                <p style="font-size: 13px; color: #64748b; margin-bottom: 10px;">หากท่านไม่สะดวกเข้ารับบริการตามวันเวลาดังกล่าว:</p>
-                <a href="{cancel_url}" style="background-color: #dc2626; color: white !important; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.25);">
+            <!-- ปุ่มยกเลิกการนัดหมาย สีแดงเด่นชัด -->
+            <div style="text-align: center; margin: 30px 0 25px 0;">
+                <p style="font-size: 14px; color: #64748b; margin-bottom: 12px;">หากท่านไม่สะดวกเข้ารับบริการตามวันเวลาดังกล่าว:</p>
+                <a href="{cancel_url}" style="background-color: #dc2626; color: white !important; padding: 14px 34px; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 15px; display: inline-block; box-shadow: 0 4px 10px rgba(220, 38, 38, 0.3);">
                     ❌ กดยกเลิกการนัดหมาย
                 </a>
             </div>
 
+            <!-- เงื่อนไขและข้อตกลงฉบับเต็ม -->
             {TERMS_AND_CONDITIONS_HTML}
 
-            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0 10px 0;">
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0 12px 0;">
             <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน | โทร. 02 453 0526 ต่อ 302</p>
         </div>
         """
@@ -887,6 +905,25 @@ def show_booking_form():
             </p>
         </div>
         """, unsafe_allow_html=True)
+
+# ========== ฟังก์ชันค้นหาแถวของ Token อัจฉริยะ (ค้นหาทั่วชีต) ==========
+def find_appointment_row_by_token(ws, token_to_find):
+    clean_token = str(token_to_find).strip().rstrip('/')
+    try:
+        cell = ws.find(clean_token)
+        if cell and cell.row > 1:
+            return cell.row
+    except Exception:
+        pass
+        
+    try:
+        all_vals = ws.get_all_values()
+        for r_idx, row in enumerate(all_vals[1:], start=2):
+            if any(str(cell_v).strip() == clean_token for cell_v in row):
+                return r_idx
+    except Exception:
+        pass
+    return None
 
 # ========== ยืนยันการเข้ารับบริการรอบที่ 2 (จากอีเมลแจ้งเตือนล่วงหน้า 1 วัน) ==========
 def handle_final_confirmation():
@@ -949,7 +986,7 @@ def handle_final_confirmation():
             st.markdown(f"""
             <div style="text-align: center; background-color: #ecfdf5; border: 3px solid #10b981; border-radius: 16px; padding: 28px 20px; margin: 25px 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <span style="font-size: 20px; color: #065f46; font-weight: 700;">เวลาที่ท่านต้องมาติดต่อห้องเวชระเบียน</span><br>
-                <span style="font-size: 48px; color: #047857; font-weight: 900; line-height: 1.4;">เวลา {arrival_time}</span><br>
+                <span style="font-size: 44px; color: #047857; font-weight: 900; line-height: 1.4;">เวลา {arrival_time}</span><br>
                 <span style="font-size: 16px; color: #065f46; font-weight: 500;">(ก่อนเวลารักษา {appt_time} น. เพื่อตรวจสอบสิทธิ์และทำประวัติ)</span>
             </div>
             """, unsafe_allow_html=True)
@@ -1057,7 +1094,7 @@ def handle_cancellation():
                 <p style="margin: 0; font-size: 1.05rem; color: #334155;">
                     ระบบได้ยกเลิกนัดหมายคุณ <b>{name}</b> ในวันที่ <b>{appt_date}</b> ช่วงเวลา <b>{appt_time} น.</b> เรียบร้อยแล้ว
                 </p>
-                <p style="margin 8px 0 0 0; color: #16a34a; font-weight: bold;">
+                <p style="margin: 8px 0 0 0; color: #16a34a; font-weight: bold;">
                     สิทธิ์ของท่านได้รับการปลดล็อกแล้ว ท่านสามารถเลือกวันเวลาเพื่อจองคิวนัดหมายใหม่ได้ทันที โดยไม่มีการระงับสิทธิ์ใดๆ
                 </p>
             </div>
