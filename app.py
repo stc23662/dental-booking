@@ -328,7 +328,7 @@ def generate_daily_appointments_pdf(df_day: pd.DataFrame, target_date: date) -> 
     
     table_data = [headers]
     status_map = {
-        'reconfirmed': '🟢 ยืนยันรอบ 2 (มาแน่นอน)',
+        'reconfirmed': '🟢 ยืนยันแล้ว (มาแน่นอน)',
         'confirmed': '🟡 ลงทะเบียนสำเร็จ',
         'pending': '⚪ รอยืนยัน',
         'completed': '✅ รับบริการแล้ว',
@@ -627,7 +627,7 @@ if hasattr(st, "dialog"):
                 </p>
             </div>
             <p style="font-size: 0.95rem; color: #64748b; margin-top: 15px;">
-                ⏰ 1 วันก่อนถึงวันนัดหมาย ให้ท่านตรวจสอบ E-mail อีกครั้ง เพื่อกดยืนยันการเข้ารับบริการ
+                ⏰ 1 วันก่อนถึงวันนัดหมาย ให้ท่านตรวจสอบ E-mail อีกครั้งเพื่อกดยืนยันการเข้ารับบริการ
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -773,7 +773,7 @@ def show_booking_form():
             ]
             if not active_existing.empty:
                 ex = active_existing.iloc[0]
-                th_stat = "ลงทะเบียนสำเร็จ" if ex['status'] == "confirmed" else ("ยืนยันรอบ 2 แล้ว" if ex['status'] == "reconfirmed" else "รอยืนยัน")
+                th_stat = "ลงทะเบียนสำเร็จ" if ex['status'] == "confirmed" else ("ยืนยันแล้ว" if ex['status'] == "reconfirmed" else "รอยืนยัน")
                 st.error(f"⛔ **ไม่สามารถจองซ้ำได้:** ท่านมีนัดหมายบริการ **{ex['service_type']}** ในวันที่ **{ex['appointment_date']}** ช่วงเวลา **{ex['appointment_time']} น.** อยู่แล้ว (สถานะ: {th_stat})\n\n*(คนไข้ 1 ท่านสามารถมีคิวนัดหมายที่รอรับบริการได้ 1 คิวเท่านั้น)*")
                 return
 
@@ -823,7 +823,7 @@ def show_booking_form():
         base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
         cancel_url = f"{base_url}/?cancel={token}"
 
-        # อีเมลแจ้งคนไข้หลังลงทะเบียน (ปรับแต่งข้อมูลขนาดใหญ่ ชัดเจน พร้อมกล่องไฮไลต์)
+        # อีเมลแจ้งคนไข้หลังลงทะเบียน
         email_body = f"""
         <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 620px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 14px;">
             <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 20px; border-radius: 10px; text-align: center; color: white;">
@@ -925,7 +925,7 @@ def find_appointment_row_by_token(ws, token_to_find):
         pass
     return None
 
-# ========== ยืนยันการเข้ารับบริการรอบที่ 2 (จากอีเมลแจ้งเตือนล่วงหน้า 1 วัน) ==========
+# ========== ยืนยันการเข้ารับบริการ (จากอีเมลแจ้งเตือนล่วงหน้า 1 วัน) ==========
 def handle_final_confirmation():
     token_param = st.query_params.get('final_confirm')
     if isinstance(token_param, list):
@@ -933,7 +933,7 @@ def handle_final_confirmation():
     token = str(token_param).strip().rstrip('/')
 
     st.markdown("""<div class="hero-banner">
-        <h1>ยืนยันการรับข้อมูลการจองนัดหมายสำเร็จ (รอบที่ 2)</h1>
+        <h1>ยืนยันเข้ารับบริการวันพรุ่งนี้ แน่นอน</h1>
         <p>ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
     </div>""", unsafe_allow_html=True)
 
@@ -978,7 +978,7 @@ def handle_final_confirmation():
             st.cache_data.clear()
             st.markdown(f"""
             <div style="font-size: 1.15rem; color: #1e293b; margin-bottom: 1rem;">
-                ระบบได้ส่งข้อมูลให้เจ้าหน้าที่แล้วว่าคุณ <b>{name}</b> ยืนยันมาแน่นอน สำหรับนัดหมายวันที่ <b>{appt_date}</b>
+                ระบบได้ส่งข้อมูลให้เจ้าหน้าที่แล้วว่าคุณ <b>{name}</b> ยืนยันเข้ารับบริการวันพรุ่งนี้แน่นอน สำหรับนัดหมายวันที่ <b>{appt_date}</b>
             </div>
             """, unsafe_allow_html=True)
 
@@ -1188,7 +1188,7 @@ def show_admin_dashboard():
 
         col1.metric("นัดหมายล่วงหน้า", f"{future_cnt} ราย")
         col2.metric("นัดหมายวันนี้ทั้งหมด", f"{today_cnt} ราย")
-        col3.metric("🟢 ยืนยันรอบ 2 แล้ววันนี้", f"{reconf_today_cnt} ราย")
+        col3.metric("🟢 ยืนยันแล้ววันนี้", f"{reconf_today_cnt} ราย")
         col4.metric("🟡 ลงทะเบียนสำเร็จ", f"{today_cnt - reconf_today_cnt} ราย")
             
         st.markdown("<br>", unsafe_allow_html=True)
@@ -1199,7 +1199,7 @@ def show_admin_dashboard():
             if not df_today.empty:
                 df_today['เวลาเวชระเบียน'] = df_today['appointment_time'].apply(get_arrival_time_str)
                 df_today['สถานะแสดงผล'] = df_today['status'].map({
-                    'reconfirmed': '🟢 ยืนยันรอบ 2 (มาแน่นอน)',
+                    'reconfirmed': '🟢 ยืนยันแล้ว (มาแน่นอน)',
                     'confirmed': '🟡 ลงทะเบียนสำเร็จ',
                     'pending': '⚪ รอยืนยัน',
                     'completed': '✅ รับบริการแล้ว',
@@ -1402,7 +1402,7 @@ def show_admin_dashboard():
                     df_day_print = df_day_print.sort_values(by=['appointment_time'])
                     df_day_print['เวลาเวชระเบียน'] = df_day_print['appointment_time'].apply(get_arrival_time_str)
                     df_day_print['สถานะแสดงผล'] = df_day_print['status'].map({
-                        'reconfirmed': '🟢 ยืนยันรอบ 2 (มาแน่นอน)',
+                        'reconfirmed': '🟢 ยืนยันแล้ว (มาแน่นอน)',
                         'confirmed': '🟡 ลงทะเบียนสำเร็จ',
                         'pending': '⚪ รอยืนยัน',
                         'completed': '✅ รับบริการแล้ว',
@@ -1412,7 +1412,7 @@ def show_admin_dashboard():
 
                     c_s1, c_s2, c_s3 = st.columns(3)
                     c_s1.metric("จำนวนคนไข้นัดทั้งหมด", f"{len(df_day_print)} ราย")
-                    c_s2.metric("🟢 ยืนยันรอบ 2 (มาแน่นอน)", f"{len(df_day_print[df_day_print['status'] == 'reconfirmed'])} ราย")
+                    c_s2.metric("🟢 ยืนยันแล้ว (มาแน่นอน)", f"{len(df_day_print[df_day_print['status'] == 'reconfirmed'])} ราย")
                     c_s3.metric("🟡 ลงทะเบียนสำเร็จ", f"{len(df_day_print[df_day_print['status'] == 'confirmed'])} ราย")
 
                     pdf_bytes = generate_daily_appointments_pdf(df_day_print, print_date)
@@ -1454,7 +1454,7 @@ def show_admin_dashboard():
                 if not df_filtered.empty:
                     df_filtered['เวลาเวชระเบียน'] = df_filtered['appointment_time'].apply(get_arrival_time_str)
                     df_filtered['สถานะ'] = df_filtered['status'].map({
-                        'reconfirmed': '🟢 ยืนยันมาแน่นอน (ครั้งที่ 2)',
+                        'reconfirmed': '🟢 ยืนยันแล้ว (มาแน่นอน)',
                         'confirmed': '🟡 ลงทะเบียนสำเร็จ',
                         'pending': '⚪ รอยืนยัน',
                         'completed': '✅ รับบริการแล้ว',
@@ -1473,7 +1473,7 @@ def show_admin_dashboard():
             appt_id = c1.number_input("รหัสนัดหมาย (ID)", min_value=1, step=1)
             new_status = c2.selectbox("สถานะใหม่", [
                 ("completed", "เข้ารับบริการแล้ว (Completed) - ปลดล็อกให้จองใหม่ได้"),
-                ("reconfirmed", "🟢 ยืนยันมาแน่นอน (ครั้งที่ 2)"),
+                ("reconfirmed", "🟢 ยืนยันแล้ว (มาแน่นอน)"),
                 ("confirmed", "ยืนยันแล้ว (Confirmed)"),
                 ("pending", "รอยืนยัน (Pending)"),
                 ("no_show", "ไม่มาตามนัด (No-Show)"),
@@ -1733,7 +1733,7 @@ def show_admin_dashboard():
     # 6. ระบบส่งแจ้งเตือน
     elif menu == "📧 ระบบส่งแจ้งเตือน":
         st.subheader("📧 ส่งอีเมลแจ้งเตือนล่วงหน้า 1 วัน")
-        st.caption("ระบบจะส่งอีเมลแจ้งเตือนนัดหมาย และให้คนไข้กดยืนยันการเข้ารับบริการรอบที่ 2 (สถานะจะเปลี่ยนเป็นสีเขียวในระบบ) หรือกดยกเลิกนัดได้ทันที")
+        st.caption("ระบบจะส่งอีเมลแจ้งเตือนนัดหมาย และให้คนไข้กดยืนยันการเข้ารับบริการ (สถานะจะเปลี่ยนเป็นสีเขียวในระบบ) หรือกดยกเลิกนัดได้ทันที")
         
         if st.button("🚀 ส่งอีเมลแจ้งเตือนทันที", type="primary"):
             tomorrow_str = (date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -1776,11 +1776,8 @@ def show_admin_dashboard():
                     </div>
 
                     <div style="text-align: center; margin: 25px 0;">
-                        <a href="{final_confirm_url}" style="background-color: #16a34a; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 15px; margin: 5px;">
-                            กดยืนยันการเข้ารับบริการ (ยืนยันรอบที่ 2)
-                        </a>
-                        <a href="tel:024530526" style="background-color: #0284c7; color: white; padding: 12px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px; margin: 5px;">
-                            โทรยืนยันนัด: 02 453 0526 ต่อ 302
+                        <a href="{final_confirm_url}" style="background-color: #16a34a; color: white; padding: 14px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 16px; margin: 5px; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3);">
+                            ✅ ยืนยันเข้ารับบริการวันพรุ่งนี้ แน่นอน
                         </a>
                         <div style="margin-top: 15px;">
                             <a href="{cancel_url}" style="background-color: #dc2626; color: white !important; padding: 10px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px;">
@@ -1898,7 +1895,7 @@ def main():
 
     ensure_worksheets_initialized(sh)
 
-    # ตรวจสอบพารามิเตอร์ URL (ยืนยันรอบสองล่วงหน้า 1 วัน / ยกเลิกนัด)
+    # ตรวจสอบพารามิเตอร์ URL (ยืนยันล่วงหน้า 1 วัน / ยกเลิกนัด)
     if 'final_confirm' in st.query_params:
         handle_final_confirmation()
         return
