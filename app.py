@@ -114,7 +114,7 @@ SERVICES = ["ถอนฟัน", "อุดฟัน", "ขูดหินป�
 # บัญชีเจ้าหน้าที่ที่ได้รับอนุญาต (Username: Password)
 DEFAULT_ADMIN_CREDENTIALS = {
     "arsm": "dent665",
-    "doc02": "dent665"
+    "dental665": "dent665"
 }
 
 def verify_admin_login(username: str, password: str) -> bool:
@@ -123,7 +123,6 @@ def verify_admin_login(username: str, password: str) -> bool:
     u = username.strip().lower()
     p = password.strip()
     
-    # ตรวจสอบกับ secrets หากมีการตั้งค่าไว้
     if "admin_users" in st.secrets:
         try:
             sec_users = {str(k).strip().lower(): str(v).strip() for k, v in st.secrets["admin_users"].items()}
@@ -132,7 +131,6 @@ def verify_admin_login(username: str, password: str) -> bool:
         except Exception:
             pass
             
-    # ตรวจสอบกับค่าเริ่มต้น (arsm / doc02: dent665)
     if u in DEFAULT_ADMIN_CREDENTIALS and DEFAULT_ADMIN_CREDENTIALS[u] == p:
         return True
         
@@ -685,9 +683,8 @@ def show_booking_form():
             </div>
             """, unsafe_allow_html=True)
 
-            # เข้าสู่ระบบด้วย Username & Password เพื่อทดสอบ
             with st.expander("🔑 เข้าสู่ระบบสำหรับเจ้าหน้าที่ (เพื่อทดสอบระบบขณะปิดปรับปรุง)"):
-                test_username = st.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="เช่น arsm, doc02", key="test_admin_user")
+                test_username = st.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="เช่น arsm, dental665", key="test_admin_user")
                 test_pwd = st.text_input("รหัสผ่าน", type="password", key="test_admin_pwd")
                 if st.button("🔓 เข้าสู่โหมดทดสอบการจอง", type="primary", use_container_width=True):
                     if verify_admin_login(test_username, test_pwd):
@@ -1122,14 +1119,14 @@ def handle_cancellation():
         st.query_params.clear()
         st.rerun()
 
-# ========== หน้า Dashboard แอดมิน (เข้าสู่ระบบด้วย Username & Password) ==========
+# ========== หน้า Dashboard แอดมิน ==========
 def show_admin_dashboard():
     if "admin_user" not in st.session_state:
         st.session_state.admin_user = None
 
     if not st.session_state.admin_user:
         st.sidebar.subheader("🔒 เข้าสู่ระบบเจ้าหน้าที่")
-        user_input = st.sidebar.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="เช่น arsm, doc02")
+        user_input = st.sidebar.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="เช่น arsm, dental665")
         pwd = st.sidebar.text_input("รหัสผ่าน", type="password")
         if st.sidebar.button("เข้าสู่ระบบ", type="primary", use_container_width=True):
             if verify_admin_login(user_input, pwd):
