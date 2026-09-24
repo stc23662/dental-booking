@@ -639,7 +639,6 @@ def show_booking_form():
     is_sys_open = get_system_status()
     is_admin_logged_in = bool(st.session_state.get("admin_user"))
 
-    # หากระบบปิด และไม่ใช่แอดมิน ให้แสดงหน้าจอซ่อมบำรุง
     if not is_sys_open:
         if not is_admin_logged_in:
             st.markdown("""
@@ -1473,7 +1472,7 @@ def show_admin_dashboard():
             appt_id = c1.number_input("รหัสนัดหมาย (ID)", min_value=1, step=1)
             new_status = c2.selectbox("สถานะใหม่", [
                 ("completed", "เข้ารับบริการแล้ว (Completed) - ปลดล็อกให้จองใหม่ได้"),
-                ("reconfirmed", "🟢 ยืนยันแล้ว (มาแน่นอน)"),
+                ("reconfirmed", "🟢 ยืนยันมาแน่นอน (ครั้งที่ 2)"),
                 ("confirmed", "ยืนยันแล้ว (Confirmed)"),
                 ("pending", "รอยืนยัน (Pending)"),
                 ("no_show", "ไม่มาตามนัด (No-Show)"),
@@ -1736,7 +1735,10 @@ def show_admin_dashboard():
         st.caption("ระบบจะส่งอีเมลแจ้งเตือนนัดหมาย และให้คนไข้กดยืนยันการเข้ารับบริการ (สถานะจะเปลี่ยนเป็นสีเขียวในระบบ) หรือกดยกเลิกนัดได้ทันที")
         
         if st.button("🚀 ส่งอีเมลแจ้งเตือนทันที", type="primary"):
-            tomorrow_str = (date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+            tomorrow_dt = date.today() + timedelta(days=1)
+            tomorrow_str = tomorrow_dt.strftime('%Y-%m-%d')
+            tomorrow_formatted = tomorrow_dt.strftime('%d/%m/%Y')
+
             targets = df_appts[
                 (df_appts['appointment_date'].astype(str) == tomorrow_str) & 
                 (df_appts['status'].isin(['confirmed', 'pending'])) & 
@@ -1761,34 +1763,67 @@ def show_admin_dashboard():
                 cancel_url = f"{base_url}/?cancel={token}"
                 
                 body = f"""
-                <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; line-height: 1.6; max-width: 600px; margin: auto;">
-                    <div style="background: #0284c7; padding: 14px; border-radius: 6px; text-align: center; color: white;">
-                        <h3 style="margin: 0;">⏰ แจ้งเตือนนัดหมายทันตกรรมวันพรุ่งนี้</h3>
-                        <p style="margin: 4px 0 0 0; font-size: 13px;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
+                <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 620px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 14px;">
+                    <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 20px; border-radius: 10px; text-align: center; color: white;">
+                        <h2 style="margin:0; font-size: 22px; font-weight: 800;">⏰ แจ้งเตือนนัดหมายทันตกรรมวันพรุ่งนี้</h2>
+                        <p style="margin:6px 0 0 0; font-size: 15px; opacity: 0.95;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน</p>
                     </div>
-                    <p style="margin-top: 20px;">เรียนคุณ <b>{name}</b>,</p>
-                    <p>ท่านมีนัดหมายบริการ <b>{srv}</b> ในวันพรุ่งนี้ ({tomorrow_str}) ช่วงเวลารักษา <b>{appt_t} น.</b></p>
                     
-                    <div style="text-align: center; background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 10px; padding: 16px; margin: 15px 0;">
-                        <span style="font-size: 14px; color: #065f46; font-weight: bold;">เวลาที่ต้องมาติดต่อห้องเวชระเบียน</span><br>
-                        <span style="font-size: 28px; color: #047857; font-weight: 800;">เวลา {arrival_time}</span><br>
-                        <span style="font-size: 12px; color: #065f46;">(ก่อนเวลานัดหมาย 30 นาที)</span>
-                    </div>
+                    <p style="margin-top: 25px; font-size: 16px; color: #1e293b;">เรียนคุณ <b>{name}</b>,</p>
+                    <p style="font-size: 15px; color: #334155; margin-bottom: 20px;">ท่านมีนัดหมายบริการทันตกรรมในวันพรุ่งนี้ โปรดตรวจสอบรายละเอียดและกดยืนยันการเข้ารับบริการ:</p>
+                    
+                    <!-- การ์ดแสดงข้อมูลนัดหมายตัวใหญ่ ชัดเจน -->
+                    <div style="background-color: #ffffff; border: 2.5px solid #0284c7; border-radius: 14px; padding: 22px; margin: 20px 0; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.08);">
+                        <div style="border-bottom: 1.5px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 12px;">
+                            <span style="font-size: 14px; color: #64748b; font-weight: bold; text-transform: uppercase;">บริการที่นัดหมาย</span><br>
+                            <span style="font-size: 24px; color: #0f172a; font-weight: 800;">🦷 {srv}</span>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 15px;">
+                            <div style="width: 50%;">
+                                <span style="font-size: 14px; color: #64748b; font-weight: bold;">วันที่เข้ารับบริการ</span><br>
+                                <span style="font-size: 22px; color: #0284c7; font-weight: 800;">📅 {tomorrow_formatted}</span>
+                            </div>
+                            <div style="width: 50%;">
+                                <span style="font-size: 14px; color: #64748b; font-weight: bold;">ช่วงเวลาเข้ารับการรักษา</span><br>
+                                <span style="font-size: 22px; color: #0f172a; font-weight: 800;">⏰ {appt_t} น.</span>
+                            </div>
+                        </div>
 
-                    <div style="text-align: center; margin: 25px 0;">
-                        <a href="{final_confirm_url}" style="background-color: #16a34a; color: white; padding: 14px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 16px; margin: 5px; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3);">
-                            ✅ ยืนยันเข้ารับบริการวันพรุ่งนี้ แน่นอน
-                        </a>
-                        <div style="margin-top: 15px;">
-                            <a href="{cancel_url}" style="background-color: #dc2626; color: white !important; padding: 10px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px;">
-                                กดยกเลิกการนัดหมาย
-                            </a>
+                        <!-- กล่องเวลาที่ต้องมาติดต่อห้องเวชระเบียน ขนาดใหญ่เด่นชัด สีแดง -->
+                        <div style="background-color: #fef2f2; border: 2.5px dashed #ef4444; border-radius: 12px; padding: 18px 12px; text-align: center; margin-top: 10px;">
+                            <span style="font-size: 16px; color: #991b1b; font-weight: 800; letter-spacing: 0.5px;">🏥 เวลาที่ต้องมาติดต่อห้องเวชระเบียน</span><br>
+                            <span style="font-size: 38px; color: #dc2626; font-weight: 900; line-height: 1.3; display: block; margin: 4px 0;">{arrival_time}</span>
+                            <span style="font-size: 13px; color: #b91c1c; font-weight: 600;">(ต้องมาติดต่อในเวลาดังกล่าวเพื่อทำประวัติและตรวจสิทธิ์ หากเกินเวลาขอยกเลิกนัดทันที)</span>
                         </div>
                     </div>
 
+                    <!-- ปุ่มกดยืนยันเข้ารับบริการวันพรุ่งนี้ แน่นอน -->
+                    <div style="text-align: center; margin: 30px 0 15px 0;">
+                        <a href="{final_confirm_url}" style="background-color: #16a34a; color: white !important; padding: 16px 36px; text-decoration: none; border-radius: 10px; font-weight: 800; display: inline-block; font-size: 17px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);">
+                            ✅ ยืนยันเข้ารับบริการวันพรุ่งนี้ แน่นอน
+                        </a>
+                    </div>
+
+                    <!-- กล่องแจ้งเตือนมาตรการระงับสิทธิ์หากยืนยันแล้วไม่มา -->
+                    <div style="background-color: #fff1f2; border: 2px solid #fecdd3; border-radius: 10px; padding: 14px 18px; margin: 20px 0; text-align: center;">
+                        <p style="margin: 0; color: #e11d48; font-weight: 800; font-size: 15px;">
+                            ⚠️ หากท่านยืนยันนัดหมายแล้วไม่มารับบริการตามนัด ระบบขอทำการระงับการจองครั้งถัดไป
+                        </p>
+                    </div>
+
+                    <!-- ปุ่มยกเลิกการนัดหมาย สีแดงเด่นชัด -->
+                    <div style="text-align: center; margin: 20px 0 25px 0;">
+                        <p style="font-size: 14px; color: #64748b; margin-bottom: 10px;">หากท่านไม่สะดวกเข้ารับบริการตามวันเวลาดังกล่าว:</p>
+                        <a href="{cancel_url}" style="background-color: #dc2626; color: white !important; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 14px; display: inline-block;">
+                            ❌ กดยกเลิกการนัดหมาย
+                        </a>
+                    </div>
+
+                    <!-- เงื่อนไขและข้อตกลงฉบับเต็ม -->
                     {TERMS_AND_CONDITIONS_HTML}
-                    
-                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
+
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0 12px 0;">
                     <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน | โทร. 02 453 0526 ต่อ 302</p>
                 </div>
                 """
