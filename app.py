@@ -634,27 +634,63 @@ if hasattr(st, "dialog"):
         if st.button("รับทราบและปิดหน้าต่างนี้", type="primary", use_container_width=True):
             st.rerun()
 
-# ========== หน้าจองคิวออนไลน์ (สำหรับคนไข้) ==========
+# ========== หน้าจองคิวออนไลน์ (สำหรับคนไข้ + สิทธิ์ทดสอบของแอดมิน) ==========
 def show_booking_form():
-    # ตรวจสอบสถานะการเปิด/ปิดระบบจากแอดมิน
-    if not get_system_status():
-        st.markdown("""
-        <div style="text-align: center; padding: 50px 25px; background: #fff7ed; border: 3px solid #fdba74; border-radius: 20px; margin: 30px auto; max-width: 720px; box-shadow: 0 15px 30px -5px rgba(234, 88, 12, 0.15);">
-            <div style="font-size: 70px; margin-bottom: 15px;">🛠️</div>
-            <h1 style="color: #9a3412; font-size: 28px; margin: 0 0 15px 0; font-weight: 800; line-height: 1.4;">
-                ระบบอยู่ระหว่างปรับปรุงการให้บริการ
-            </h1>
-            <p style="font-size: 16px; color: #475569; line-height: 1.8; margin: 0 0 25px 0;">
-                ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน ขออภัยในความไม่สะดวก<br>
-                ขณะนี้ระบบจองคิวออนไลน์กำลังปิดปรับปรุงชั่วคราว เพื่อพัฒนาระบบการให้บริการ<br>
-                เจ้าหน้าที่จะเปิดให้ทำการนัดหมายออนไลน์อีกครั้งเมื่อปรับปรุงเสร็จสิ้น
-            </p>
-            <div style="background-color: #ffffff; border: 2px dashed #f97316; padding: 14px 26px; border-radius: 12px; display: inline-block;">
-                📞 ติดต่อสอบถาม / นัดหมายโดยตรง โทร. <b style="color: #c2410c; font-size: 17px;">02 453 0526 ต่อ 302</b>
+    is_sys_open = get_system_status()
+    is_admin_logged_in = bool(st.session_state.get("admin_user"))
+
+    # หากระบบปิด และไม่ใช่แอดมิน ให้แสดงหน้าจอซ่อมบำรุง
+    if not is_sys_open:
+        if not is_admin_logged_in:
+            st.markdown("""
+            <div style="text-align: center; padding: 50px 25px; background: #fff7ed; border: 3px solid #fdba74; border-radius: 20px; margin: 30px auto; max-width: 720px; box-shadow: 0 15px 30px -5px rgba(234, 88, 12, 0.15);">
+                <div style="font-size: 70px; margin-bottom: 15px;">🛠️</div>
+                <h1 style="color: #9a3412; font-size: 28px; margin: 0 0 15px 0; font-weight: 800; line-height: 1.4;">
+                    ระบบอยู่ระหว่างปรับปรุงการให้บริการ
+                </h1>
+                <p style="font-size: 16px; color: #475569; line-height: 1.8; margin: 0 0 25px 0;">
+                    ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน ขออภัยในความไม่สะดวก<br>
+                    ขณะนี้ระบบจองคิวออนไลน์กำลังปิดปรับปรุงชั่วคราว เพื่อพัฒนาระบบการให้บริการ<br>
+                    เจ้าหน้าที่จะเปิดให้ทำการนัดหมายออนไลน์อีกครั้งเมื่อปรับปรุงเสร็จสิ้น
+                </p>
+                <div style="background-color: #ffffff; border: 2px dashed #f97316; padding: 14px 26px; border-radius: 12px; display: inline-block;">
+                    📞 ติดต่อสอบถาม / นัดหมายโดยตรง โทร. <b style="color: #c2410c; font-size: 17px;">02 453 0526 ต่อ 302</b>
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-        return
+            """, unsafe_allow_html=True)
+
+            # กล่องเข้าสู่ระบบสำหรับแอดมินเพื่อทดสอบระบบจองคิว
+            with st.expander("🔑 เข้าสู่ระบบสำหรับเจ้าหน้าที่ (เพื่อทดสอบระบบขณะปิดปรับปรุง)"):
+                try:
+                    allowed_admins = st.secrets["admin_auth"]["allowed_emails"]
+                    admin_password_correct = st.secrets["admin_auth"]["password"]
+                except KeyError:
+                    allowed_admins = ["healtheducation.hc65@gmail.com", "dental665@gmail.com"]
+                    admin_password_correct = "admin123"
+
+                test_email = st.selectbox("เลือกบัญชีเจ้าหน้าที่", allowed_admins, key="test_admin_email")
+                test_pwd = st.text_input("รหัสผ่านผู้ดูแลระบบ", type="password", key="test_admin_pwd")
+                if st.button("🔓 เข้าสู่โหมดทดสอบการจอง", type="primary", use_container_width=True):
+                    if test_pwd == admin_password_correct:
+                        st.session_state.admin_user = test_email
+                        st.session_state.is_admin = True
+                        st.success("เข้าสู่โหมดทดสอบสำเร็จ!")
+                        st.rerun()
+                    else:
+                        st.error("❌ รหัสผ่านไม่ถูกต้อง")
+            return
+        else:
+            # กรณีแอดมินล็อกอินอยู่แล้ว ให้แสดงแถบสีแดงเตือน แต่เปิดฟอร์มให้ทดสอบได้ตามปกติ
+            st.markdown(f"""
+            <div style="background-color: #fef2f2; border: 2px solid #ef4444; border-radius: 12px; padding: 14px 20px; margin-bottom: 20px;">
+                <span style="font-size: 1.1rem; color: #b91c1c; font-weight: bold;">
+                    🛠️ ขณะนี้ระบบปิดปรับปรุงอยู่ (บุคคลภายนอกไม่สามารถเข้าใช้งานได้)
+                </span><br>
+                <span style="font-size: 0.92rem; color: #7f1d1d;">
+                    คุณเข้าสู่ระบบในฐานะเจ้าหน้าที่ <b>{st.session_state.admin_user}</b> สามารถทดสอบการลงทะเบียนจองและระบบอีเมลได้ตามปกติ
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.markdown("""<div class="hero-banner">
         <h1>🦷 ระบบจองคิวทันตกรรม</h1>
@@ -809,14 +845,12 @@ def show_booking_form():
                 </ul>
             </div>
 
-            <!-- กล่องแจ้งเตือนรอบ 1 วัน -->
             <div style="text-align: center; background-color: #fffbeb; border: 2px solid #fde68a; border-radius: 10px; padding: 14px 18px; margin: 22px 0;">
                 <p style="margin: 0; color: #b45309; font-weight: bold; font-size: 15px;">
                     ⏰ 1 วันก่อนถึงวันนัดหมาย ให้ท่านตรวจสอบ E-mail อีกครั้ง เพื่อกดยืนยันการเข้ารับบริการ
                 </p>
             </div>
 
-            <!-- ปุ่มยกเลิกการนัดหมาย -->
             <div style="text-align: center; margin: 28px 0 20px 0;">
                 <p style="font-size: 13px; color: #64748b; margin-bottom: 10px;">หากท่านไม่สะดวกเข้ารับบริการตามวันเวลาดังกล่าว:</p>
                 <a href="{cancel_url}" style="background-color: #dc2626; color: white !important; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.25);">
@@ -824,7 +858,6 @@ def show_booking_form():
                 </a>
             </div>
 
-            <!-- เงื่อนไขและข้อตกลงฉบับเต็ม -->
             {TERMS_AND_CONDITIONS_HTML}
 
             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0 10px 0;">
@@ -854,25 +887,6 @@ def show_booking_form():
             </p>
         </div>
         """, unsafe_allow_html=True)
-
-# ========== ฟังก์ชันค้นหาแถวของ Token อัจฉริยะ (ค้นหาทั่วชีต) ==========
-def find_appointment_row_by_token(ws, token_to_find):
-    clean_token = str(token_to_find).strip().rstrip('/')
-    try:
-        cell = ws.find(clean_token)
-        if cell and cell.row > 1:
-            return cell.row
-    except Exception:
-        pass
-        
-    try:
-        all_vals = ws.get_all_values()
-        for r_idx, row in enumerate(all_vals[1:], start=2):
-            if any(str(cell_v).strip() == clean_token for cell_v in row):
-                return r_idx
-    except Exception:
-        pass
-    return None
 
 # ========== ยืนยันการเข้ารับบริการรอบที่ 2 (จากอีเมลแจ้งเตือนล่วงหน้า 1 วัน) ==========
 def handle_final_confirmation():
@@ -1043,7 +1057,7 @@ def handle_cancellation():
                 <p style="margin: 0; font-size: 1.05rem; color: #334155;">
                     ระบบได้ยกเลิกนัดหมายคุณ <b>{name}</b> ในวันที่ <b>{appt_date}</b> ช่วงเวลา <b>{appt_time} น.</b> เรียบร้อยแล้ว
                 </p>
-                <p style="margin: 8px 0 0 0; color: #16a34a; font-weight: bold;">
+                <p style="margin 8px 0 0 0; color: #16a34a; font-weight: bold;">
                     สิทธิ์ของท่านได้รับการปลดล็อกแล้ว ท่านสามารถเลือกวันเวลาเพื่อจองคิวนัดหมายใหม่ได้ทันที โดยไม่มีการระงับสิทธิ์ใดๆ
                 </p>
             </div>
