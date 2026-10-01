@@ -212,9 +212,8 @@ def normalize_date_str(d_val) -> str:
     if not s:
         return ""
     
-    s = s.split(" ")[0].strip() # ตัดเวลาทิ้งถ้ามี
+    s = s.split(" ")[0].strip()
     
-    # กรณี 1: รูปแบบ YYYY-MM-DD
     if "-" in s:
         parts = s.split("-")
         if len(parts) == 3 and len(parts[0]) == 4:
@@ -228,7 +227,6 @@ def normalize_date_str(d_val) -> str:
             except Exception:
                 pass
                 
-    # กรณี 2: รูปแบบ DD/MM/YYYY หรือ YYYY/MM/DD
     if "/" in s:
         parts = s.split("/")
         if len(parts) == 3:
@@ -290,11 +288,11 @@ def set_system_status(is_open: bool):
     st.cache_data.clear()
     return True
 
-# ========== ฟังก์ชันคำนวณช่วงเวลาที่ต้องมาติดต่อห้องเวชระเบียน ==========
+# ========== ฟังก์ชันคำนวณช่วงเวลาที่ต้องมาติดต่อห้องเวชระเบียน (อัปเดตใหม่) ==========
 def get_arrival_time_str(slot_label: str) -> str:
     norm = normalize_time_slot(slot_label)
     if "16:00" in norm:
-        return "15.30 - 15.45 น."
+        return "15.00 - 15.45 น."
     elif "17:00" in norm:
         return "16.30 - 16.45 น."
     try:
@@ -308,6 +306,7 @@ def get_arrival_time_str(slot_label: str) -> str:
     except Exception:
         return "ก่อนเวลานัดหมาย 30 นาที"
 
+# ========== กล่องเงื่อนไขและข้อตกลง HTML (อัปเดต 15.00 น. และ 15.00 - 15.45 น.) ==========
 TERMS_AND_CONDITIONS_HTML = """
 <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem; margin-bottom: 1rem;">
     <h4 style="color: #166534; margin-top: 0; margin-bottom: 0.75rem; font-size: 1.05rem;">🏥 เงื่อนไขและข้อตกลงการเข้ารับบริการนัดหมายออนไลน์</h4>
@@ -315,7 +314,7 @@ TERMS_AND_CONDITIONS_HTML = """
         <p style="margin-bottom: 4px;"><b>1. การเตรียมตัวก่อนมาถึง</b></p>
         <ul style="margin-top: 0; margin-bottom: 8px; padding-left: 20px; color: #334155;">
             <li><b>การยืนยันนัด:</b> ผู้รับบริการต้อง <b>ยืนยันนัดหมายใน E- mail ที่ส่งให้ท่าน ก่อนเข้ารับบริการ 1 วัน หรือโทรยืนยันนัดหมาย เบอร์ 02 453 0526 ต่อ 302</b></li>
-            <li><b>การลงทะเบียน:</b> ผู้รับบริการต้องมาติดต่อที่ห้องเวชระเบียน เพื่อตรวจสอบสิทธิ์และทำประวัติ <b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. ลงทะเบียนเวลา 15.30 น. / รอบเวลา 17.00 - 18.00 น. ลงทะเบียนเวลา 16.30 น.</b></li>
+            <li><b>การลงทะเบียน:</b> ผู้รับบริการต้องมาติดต่อที่ห้องเวชระเบียน เพื่อตรวจสอบสิทธิ์และทำประวัติ <b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. ลงทะเบียนเวลา 15.00 น. / รอบเวลา 17.00 - 18.00 น. ลงทะเบียนเวลา 16.30 น.</b></li>
             <li><b>เอกสารที่ต้องเตรียม:</b> โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> มาแสดงทุกครั้งที่เข้ารับบริการ</li>
             <li><b>ประวัติสุขภาพ:</b> หากมีโรคประจำตัว โปรดนำยาทั้งหมดมาด้วย หากแพ้ยา โปรดนำบัตรแพ้ยามาด้วย</li>
         </ul>
@@ -323,7 +322,7 @@ TERMS_AND_CONDITIONS_HTML = """
         <ul style="margin-top: 0; margin-bottom: 8px; padding-left: 20px; color: #334155;">
             <li><b>การมาสาย:</b>
                 <ul style="margin-top: 2px; margin-bottom: 4px; padding-left: 18px;">
-                    <li><b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. ท่านต้องมาติดต่อห้องเวชระเบียน 15.30 - 15.45 น.</b></li>
+                    <li><b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. ท่านต้องมาติดต่อห้องเวชระเบียน 15.00 - 15.45 น.</b></li>
                     <li><b style="color: #dc2626;">รอบเวลา 17.00 - 18.00 น. ท่านต้องมาติดต่อห้องเวชระเบียน 16.30 - 16.45 น.</b></li>
                 </ul>
                 <b style="color: #dc2626;">หากเกินเวลาดังกล่าว ทางศูนย์ขอสงวนสิทธิ์ในการ ยกเลิกนัดหมาย ของท่านทันที เพื่อไม่ให้กระทบต่อคิวถัดไป</b>
@@ -501,7 +500,6 @@ def ensure_worksheets_initialized(_sh):
     except Exception:
         pass
 
-# โหลดข้อมูลชีตด้วย get_all_values() ป้องกันบั๊กหัวตารางเว้นว่าง และกรองแถวว่างอัตโนมัติ
 @st.cache_data(ttl=8, show_spinner=False)
 def get_table_df(table_name):
     sh = get_spreadsheet()
@@ -673,7 +671,6 @@ def record_no_show(appointment_id, reported_by="system", notes=""):
         )
     return True
 
-# ฟังก์ชันอัปเดตสถานะคนไข้ทีละหลายคนพร้อมกันใน Google Sheets
 def batch_update_appointments_status(selected_ids, target_status, reported_by="admin"):
     sh = get_spreadsheet()
     if not sh or not selected_ids:
@@ -913,7 +910,7 @@ def show_booking_form():
             st.error("❌ กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบทุกช่อง")
             return
             
-        if len(id_card.strip()) != 13 or not id_card.strip().isdigit():
+        if len(id_card) != 13 or not id_card.isdigit():
             st.error("❌ เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น")
             return
 
@@ -1273,16 +1270,15 @@ def show_admin_dashboard():
         st.info("กรุณากรอกชื่อผู้ใช้งานและรหัสผ่านทางแถบด้านซ้ายเพื่อเข้าจัดการระบบ")
         return
 
-    # แถบควบคุมสถานะระบบ (เปิด/ปิดระบบจองคิวออนไลน์)
     sys_open = get_system_status()
-    st.markdown("### ⚙️️ ควบคุมสถานะระบบจองคิวออนไลน์")
+    st.markdown("### ⚙️ ควบคุมสถานะระบบจองคิวออนไลน์")
     col_st1, col_st2, col_st3 = st.columns([2.5, 1.8, 1.7])
     
     if sys_open:
         col_st1.success("🟢 **สถานะระบบ:** เปิดให้บริการจองคิวตามปกติ")
         if col_st2.button("🔴 ปิดระบบการจอง (โหมดปรับปรุง)", type="primary", use_container_width=True):
             set_system_status(False)
-            st.warning("⚠️ ปิดระบบการจองเรียบร้อยแล้ว")
+            st.warning("⚠️️ ปิดระบบการจองเรียบร้อยแล้ว")
             st.rerun()
     else:
         col_st1.error("🔴 **สถานะระบบ:** ปิดปรับปรุงชั่วคราว")
