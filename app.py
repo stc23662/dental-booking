@@ -144,6 +144,14 @@ TABLE_SCHEMAS = {
     "system_settings": ["setting_key", "setting_value", "updated_at"]
 }
 
+# ========== ฟังก์ชันเวลาประเทศไทย (UTC+7) ==========
+def get_bangkok_now():
+    return datetime.utcnow() + timedelta(hours=7)
+
+def get_bangkok_today():
+    return get_bangkok_now().date()
+
+# ========== ฟังก์ชันแปลงค่า ป้องกัน TypeError: int64 is not JSON serializable ==========
 def clean_sheet_val(v):
     if pd.isna(v) or v is None:
         return ""
@@ -171,6 +179,7 @@ def append_appointment_mapped(ws, data_dict):
     row = [clean_sheet_val(data_dict.get(h, "")) for h in headers]
     safe_append_row(ws, row)
 
+# ========== ฟังก์ชันแปลงรูปแบบเวลาและวันที่ แม่นยำ 100% ไม่สลับวัน/เดือน ==========
 def normalize_time_slot(t_str: str) -> str:
     if not t_str or pd.isna(t_str):
         return ""
@@ -193,15 +202,50 @@ def normalize_time_slot(t_str: str) -> str:
     return " - ".join(clean_parts)
 
 def normalize_date_str(d_val) -> str:
-    if not d_val or pd.isna(d_val):
+    """แปลงวันที่ทุกรูปแบบให้เป็น YYYY-MM-DD โดยไม่สลับวันกับเดือนแน่นอน"""
+    if d_val is None or pd.isna(d_val):
         return ""
+    if isinstance(d_val, (date, datetime)):
+        return d_val.strftime('%Y-%m-%d')
+    
     s = str(d_val).strip()
-    try:
-        dt = pd.to_datetime(s, dayfirst=True)
-        return dt.strftime('%Y-%m-%d')
-    except Exception:
-        return s
+    if not s:
+        return ""
+    
+    s = s.split(" ")[0].strip() # ตัดเวลาทิ้งถ้ามี
+    
+    # กรณี 1: รูปแบบ YYYY-MM-DD
+    if "-" in s:
+        parts = s.split("-")
+        if len(parts) == 3 and len(parts[0]) == 4:
+            try:
+                y = int(parts[0])
+                m = int(parts[1])
+                d = int(parts[2])
+                if y > 2400:
+                    y -= 543
+                return f"{y:04d}-{m:02d}-{d:02d}"
+            except Exception:
+                pass
+                
+    # กรณี 2: รูปแบบ DD/MM/YYYY หรือ YYYY/MM/DD
+    if "/" in s:
+        parts = s.split("/")
+        if len(parts) == 3:
+            try:
+                if len(parts[0]) == 4:
+                    y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                else:
+                    d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+                if y > 2400:
+                    y -= 543
+                return f"{y:04d}-{m:02d}-{d:02d}"
+            except Exception:
+                pass
+                
+    return s
 
+# ========== ฟังก์ชันตรวจสอบและตั้งค่าการเปิด/ปิดระบบจองคิว ==========
 def get_system_status() -> bool:
     df_settings = get_table_df("system_settings")
     if df_settings.empty or "setting_key" not in df_settings.columns:
@@ -223,7 +267,7 @@ def set_system_status(is_open: bool):
         safe_append_row(ws, TABLE_SCHEMAS["system_settings"])
 
     df_settings = get_table_df("system_settings")
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now_str = get_bangkok_now().strftime('%Y-%m-%d %H:%M:%S')
     new_val = "open" if is_open else "closed"
     
     headers = [h.strip() for h in ws.row_values(1)]
@@ -246,6 +290,7 @@ def set_system_status(is_open: bool):
     st.cache_data.clear()
     return True
 
+# ========== ฟังก์ชันคำนวณช่วงเวลาที่ต้องมาติดต่อห้องเวชระเบียน ==========
 def get_arrival_time_str(slot_label: str) -> str:
     norm = normalize_time_slot(slot_label)
     if "16:00" in norm:
@@ -346,7 +391,7 @@ def generate_daily_appointments_pdf(df_day: pd.DataFrame, target_date: date) -> 
     style_td_center = ParagraphStyle('TDCenterStyle', fontName=font_name, fontSize=8.5, leading=11, alignment=1, textColor=colors.HexColor('#1e293b'))
     
     d_be = target_date.strftime('%d/%m/') + str(target_date.year + 543)
-    now_be = datetime.now().strftime('%d/%m/') + str(datetime.now().year + 543) + datetime.now().strftime(' %H:%M น.')
+    now_be = get_bangkok_now().strftime('%d/%m/') + str(get_bangkok_now().year + 543) + get_bangkok_now().strftime(' %H:%M น.')
     
     elements.append(Paragraph("ศูนย์บริการสาธารณสุข 65 รักษาศุข บางบอน", style_title))
     elements.append(Spacer(1, 3))
@@ -456,6 +501,7 @@ def ensure_worksheets_initialized(_sh):
     except Exception:
         pass
 
+# โหลดข้อมูลชีตด้วย get_all_values() ป้องกันบั๊กหัวตารางเว้นว่าง และกรองแถวว่างอัตโนมัติ
 @st.cache_data(ttl=8, show_spinner=False)
 def get_table_df(table_name):
     sh = get_spreadsheet()
@@ -463,8 +509,24 @@ def get_table_df(table_name):
         return pd.DataFrame(columns=TABLE_SCHEMAS.get(table_name, []))
     try:
         ws = sh.worksheet(table_name)
-        records = ws.get_all_records()
-        df = pd.DataFrame(records)
+        all_vals = ws.get_all_values()
+        if not all_vals or len(all_vals) <= 1:
+            return pd.DataFrame(columns=TABLE_SCHEMAS.get(table_name, []))
+        
+        headers = [h.strip() for h in all_vals[0]]
+        data = all_vals[1:]
+        
+        norm_data = []
+        for row in data:
+            if len(row) < len(headers):
+                row = row + [""] * (len(headers) - len(row))
+            elif len(row) > len(headers):
+                row = row[:len(headers)]
+            norm_data.append(row)
+            
+        df = pd.DataFrame(norm_data, columns=headers)
+        df = df.loc[:, [c for c in df.columns if c != ""]]
+        
         expected = TABLE_SCHEMAS.get(table_name, [])
         for col in expected:
             if col not in df.columns:
@@ -476,7 +538,8 @@ def get_table_df(table_name):
             elif 'setting_key' in df.columns:
                 df = df[df['setting_key'].astype(str).str.strip() != ""]
         return df
-    except Exception:
+    except Exception as e:
+        st.error(f"⚠️ เกิดข้อผิดพลาดในการโหลดตาราง {table_name}: {e}")
         return pd.DataFrame(columns=TABLE_SCHEMAS.get(table_name, []))
 
 def send_email(to_email: str, subject: str, body: str, cc_email: str = "dental665@gmail.com") -> bool:
@@ -513,7 +576,7 @@ def check_blacklist(id_card=None, phone=None, patient_id=None):
     df_bl = get_table_df("blacklist")
     if df_bl.empty:
         return None
-    today_str = date.today().strftime('%Y-%m-%d')
+    today_str = get_bangkok_today().strftime('%Y-%m-%d')
     active_bl = df_bl[df_bl['blacklisted_until'].astype(str) >= today_str]
     
     if id_card:
@@ -542,15 +605,16 @@ def add_to_blacklist(patient_id, reason, days_penalty=30, reported_by="system"):
     df_bl = get_table_df("blacklist")
     existing = check_blacklist(patient_id=patient_id)
     
-    until_d = (date.today() + timedelta(days=days_penalty)).strftime('%Y-%m-%d')
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    until_d = (get_bangkok_today() + timedelta(days=days_penalty)).strftime('%Y-%m-%d')
+    now_str = get_bangkok_now().strftime('%Y-%m-%d %H:%M:%S')
     
     if existing:
         new_cnt = int(existing.get('no_show_count', 1)) + 1
-        records = ws_bl.get_all_records()
-        for idx, r in enumerate(records, start=2):
-            if str(r.get('patient_id')) == str(patient_id):
-                headers = ws_bl.row_values(1)
+        all_rows = ws_bl.get_all_values()
+        headers = [h.strip().lower() for h in all_rows[0]]
+        p_id_col = headers.index("patient_id")
+        for idx, row in enumerate(all_rows[1:], start=2):
+            if row[p_id_col].strip() == str(patient_id).strip():
                 ws_bl.update_cell(idx, headers.index('no_show_count') + 1, new_cnt)
                 ws_bl.update_cell(idx, headers.index('blacklisted_until') + 1, until_d)
                 ws_bl.update_cell(idx, headers.index('reason') + 1, f"{reason} (ครั้งที่ {new_cnt})")
@@ -576,21 +640,24 @@ def record_no_show(appointment_id, reported_by="system", notes=""):
     appt_date = a_info.get('appointment_date')
     
     ws_a = sh.worksheet("appointments")
-    records = ws_a.get_all_records()
-    for idx, r in enumerate(records, start=2):
-        if str(r.get('id')) == str(appointment_id):
-            headers = ws_a.row_values(1)
-            ws_a.update_cell(idx, headers.index('status') + 1, 'no_show')
+    all_rows = ws_a.get_all_values()
+    headers = [h.strip().lower() for h in all_rows[0]]
+    id_col = headers.index("id")
+    status_col = headers.index("status") + 1
+    
+    for idx, row in enumerate(all_rows[1:], start=2):
+        if row[id_col].strip() == str(appointment_id).strip():
+            ws_a.update_cell(idx, status_col, 'no_show')
             break
             
     ws_ns = sh.worksheet("no_show_records")
     df_ns = get_table_df("no_show_records")
     next_id = int(pd.to_numeric(df_ns['id'], errors='coerce').fillna(0).max()) + 1 if not df_ns.empty else 1
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now_str = get_bangkok_now().strftime('%Y-%m-%d %H:%M:%S')
     safe_append_row(ws_ns, [next_id, int(appointment_id), int(patient_id), appt_date, 'no_show', reported_by, notes, now_str])
     st.cache_data.clear()
     
-    cutoff_date = (date.today() - timedelta(days=90)).strftime('%Y-%m-%d')
+    cutoff_date = (get_bangkok_today() - timedelta(days=90)).strftime('%Y-%m-%d')
     df_ns_all = get_table_df("no_show_records")
     patient_no_shows = df_ns_all[
         (df_ns_all['patient_id'].astype(str) == str(patient_id)) &
@@ -612,9 +679,10 @@ def batch_update_appointments_status(selected_ids, target_status, reported_by="a
     if not sh or not selected_ids:
         return 0
     ws_a = sh.worksheet("appointments")
-    records = ws_a.get_all_records()
-    headers = [h.strip().lower() for h in ws_a.row_values(1)]
-    status_col = headers.index("status") + 1 if "status" in headers else 10
+    all_rows = ws_a.get_all_values()
+    headers = [h.strip().lower() for h in all_rows[0]]
+    id_col = headers.index("id")
+    status_col = headers.index("status") + 1
     
     count = 0
     for appt_id in selected_ids:
@@ -622,8 +690,8 @@ def batch_update_appointments_status(selected_ids, target_status, reported_by="a
             record_no_show(appt_id, reported_by=reported_by, notes="เจ้าหน้าที่ระบุไม่มาตามนัด (แบบกลุ่ม)")
             count += 1
         else:
-            for idx, r in enumerate(records, start=2):
-                if str(r.get('id')) == str(appt_id):
+            for idx, row in enumerate(all_rows[1:], start=2):
+                if row[id_col].strip() == str(appt_id).strip():
                     ws_a.update_cell(idx, status_col, target_status)
                     count += 1
                     break
@@ -811,7 +879,7 @@ def show_booking_form():
         
         col_date, col_slot = st.columns(2)
         with col_date:
-            min_date = date.today()
+            min_date = get_bangkok_today()
             max_date = min_date + timedelta(days=120)
             appointment_date = st.date_input("เลือกวันที่ต้องการนัดหมาย *", min_value=min_date, max_value=max_date, value=min_date + timedelta(days=1))
             
@@ -872,7 +940,7 @@ def show_booking_form():
                 active_existing = df_appts_fresh[
                     (df_appts_fresh['id_card'].astype(str) == id_card.strip()) &
                     (df_appts_fresh['norm_status'].isin(['pending', 'confirmed', 'reconfirmed'])) &
-                    (df_appts_fresh['norm_date'] >= date.today().strftime('%Y-%m-%d'))
+                    (df_appts_fresh['norm_date'] >= get_bangkok_today().strftime('%Y-%m-%d'))
                 ]
                 if not active_existing.empty:
                     ex = active_existing.iloc[0]
@@ -883,16 +951,18 @@ def show_booking_form():
             ws_p = sh.worksheet("patients")
             df_p = get_table_df("patients")
             p_match = df_p[df_p['id_card'].astype(str) == id_card.strip()]
-            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now_str = get_bangkok_now().strftime('%Y-%m-%d %H:%M:%S')
             
             if not p_match.empty:
                 p_id = int(p_match.iloc[0]['id'])
-                for idx, r in enumerate(ws_p.get_all_records(), start=2):
-                    if str(r.get('id')) == str(p_id):
-                        headers = ws_p.row_values(1)
-                        ws_p.update_cell(idx, headers.index('full_name') + 1, full_name.strip())
-                        ws_p.update_cell(idx, headers.index('phone') + 1, phone.strip())
-                        ws_p.update_cell(idx, headers.index('email') + 1, email.strip())
+                all_p_rows = ws_p.get_all_values()
+                p_headers = [h.strip().lower() for h in all_p_rows[0]]
+                p_id_col = p_headers.index("id")
+                for idx, row in enumerate(all_p_rows[1:], start=2):
+                    if row[p_id_col].strip() == str(p_id).strip():
+                        ws_p.update_cell(idx, p_headers.index('full_name') + 1, full_name.strip())
+                        ws_p.update_cell(idx, p_headers.index('phone') + 1, phone.strip())
+                        ws_p.update_cell(idx, p_headers.index('email') + 1, email.strip())
                         break
             else:
                 p_id = int(pd.to_numeric(df_p['id'], errors='coerce').fillna(0).max()) + 1 if not df_p.empty else 1
@@ -1028,13 +1098,13 @@ def handle_final_confirmation():
 
     sh = get_spreadsheet()
     ws = sh.worksheet("appointments")
-    headers_raw = ws.row_values(1)
-    headers_clean = [h.strip().lower() for h in headers_raw]
+    all_rows = ws.get_all_values()
+    headers_clean = [h.strip().lower() for h in all_rows[0]]
     
     target_row = find_appointment_row_by_token(ws, token)
     
     if target_row:
-        row_vals = ws.row_values(target_row)
+        row_vals = all_rows[target_row - 1]
         while len(row_vals) < len(headers_clean):
             row_vals.append("")
         row_dict = dict(zip(headers_clean, row_vals))
@@ -1110,12 +1180,12 @@ def handle_cancellation():
 
     sh = get_spreadsheet()
     ws = sh.worksheet("appointments")
-    headers_raw = ws.row_values(1)
-    headers_clean = [h.strip().lower() for h in headers_raw]
+    all_rows = ws.get_all_values()
+    headers_clean = [h.strip().lower() for h in all_rows[0]]
     target_row = find_appointment_row_by_token(ws, token)
 
     if target_row:
-        row_vals = ws.row_values(target_row)
+        row_vals = all_rows[target_row - 1]
         while len(row_vals) < len(headers_clean):
             row_vals.append("")
         row_dict = dict(zip(headers_clean, row_vals))
@@ -1184,7 +1254,7 @@ def handle_cancellation():
         st.query_params.clear()
         st.rerun()
 
-# ========== หน้า Dashboard แอดมิน (ตารางมี Checkbox ติ๊กเลือกเปลี่ยนสถานะแบบกลุ่ม) ==========
+# ========== หน้า Dashboard แอดมิน ==========
 def show_admin_dashboard():
     if "admin_user" not in st.session_state:
         st.session_state.admin_user = None
@@ -1203,15 +1273,16 @@ def show_admin_dashboard():
         st.info("กรุณากรอกชื่อผู้ใช้งานและรหัสผ่านทางแถบด้านซ้ายเพื่อเข้าจัดการระบบ")
         return
 
+    # แถบควบคุมสถานะระบบ (เปิด/ปิดระบบจองคิวออนไลน์)
     sys_open = get_system_status()
-    st.markdown("### ⚙️ ควบคุมสถานะระบบจองคิวออนไลน์")
+    st.markdown("### ⚙️️ ควบคุมสถานะระบบจองคิวออนไลน์")
     col_st1, col_st2, col_st3 = st.columns([2.5, 1.8, 1.7])
     
     if sys_open:
         col_st1.success("🟢 **สถานะระบบ:** เปิดให้บริการจองคิวตามปกติ")
         if col_st2.button("🔴 ปิดระบบการจอง (โหมดปรับปรุง)", type="primary", use_container_width=True):
             set_system_status(False)
-            st.warning("⚠️️ ปิดระบบการจองเรียบร้อยแล้ว")
+            st.warning("⚠️ ปิดระบบการจองเรียบร้อยแล้ว")
             st.rerun()
     else:
         col_st1.error("🔴 **สถานะระบบ:** ปิดปรับปรุงชั่วคราว")
@@ -1251,33 +1322,38 @@ def show_admin_dashboard():
     df_appts = get_table_df("appointments")
     sh = get_spreadsheet()
 
-    # 1. ภาพรวมสถิติ (มีช่องติ๊กหน้าชื่อ เปลี่ยนสถานะพร้อมกันได้ทันที)
+    # 1. ภาพรวมสถิติ
     if menu == "📊 ภาพรวมสถิติ":
-        today_str = date.today().strftime('%Y-%m-%d')
-        col1, col2, col3, col4 = st.columns(4)
+        today_dt = get_bangkok_today()
+        today_str = today_dt.strftime('%Y-%m-%d')
         
+        c_pick1, _ = st.columns([3, 7])
+        view_date = c_pick1.date_input("📅 เลือกวันที่ต้องการดูตารางนัดหมาย", value=today_dt, key="dashboard_view_date")
+        view_date_str = view_date.strftime('%Y-%m-%d')
+
         if not df_appts.empty:
             df_appts_st = df_appts.copy()
             df_appts_st['norm_date'] = df_appts_st['appointment_date'].apply(normalize_date_str)
             df_appts_st['norm_status'] = df_appts_st['status'].astype(str).str.strip().str.lower()
             
             future_cnt = len(df_appts_st[df_appts_st['norm_date'] >= today_str])
-            today_cnt = len(df_appts_st[df_appts_st['norm_date'] == today_str])
-            reconf_today_cnt = len(df_appts_st[(df_appts_st['norm_date'] == today_str) & (df_appts_st['norm_status'] == 'reconfirmed')])
-            completed_today_cnt = len(df_appts_st[(df_appts_st['norm_date'] == today_str) & (df_appts_st['norm_status'] == 'completed')])
+            selected_cnt = len(df_appts_st[df_appts_st['norm_date'] == view_date_str])
+            reconf_cnt = len(df_appts_st[(df_appts_st['norm_date'] == view_date_str) & (df_appts_st['norm_status'] == 'reconfirmed')])
+            completed_cnt = len(df_appts_st[(df_appts_st['norm_date'] == view_date_str) & (df_appts_st['norm_status'] == 'completed')])
         else:
-            future_cnt = today_cnt = reconf_today_cnt = completed_today_cnt = 0
+            future_cnt = selected_cnt = reconf_cnt = completed_cnt = 0
 
-        col1.metric("นัดหมายล่วงหน้า", f"{future_cnt} ราย")
-        col2.metric("นัดหมายวันนี้ทั้งหมด", f"{today_cnt} ราย")
-        col3.metric("🟢 ยืนยันแล้ววันนี้", f"{reconf_today_cnt} ราย")
-        col4.metric("✅ ตรวจรักษาเสร็จแล้ว", f"{completed_today_cnt} ราย")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("นัดหมายล่วงหน้า (ทั้งหมด)", f"{future_cnt} ราย")
+        col2.metric(f"นัดหมายวันที่ {view_date.strftime('%d/%m')}", f"{selected_cnt} ราย")
+        col3.metric("🟢 ยืนยันแล้ว (วันที่เลือก)", f"{reconf_cnt} ราย")
+        col4.metric("✅ ตรวจเสร็จสิ้น (วันที่เลือก)", f"{completed_cnt} ราย")
             
         st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📋 ตารางนัดหมายประจำวันนี้ (ติ๊กหน้าชื่อเพื่อเปลี่ยนสถานะ)")
+        st.subheader(f"📋 รายชื่อผู้ป่วยนัดหมายวันที่ {view_date.strftime('%d/%m/%Y')}")
         
         if not df_appts.empty:
-            df_today = df_appts_st[df_appts_st['norm_date'] == today_str].copy()
+            df_today = df_appts_st[df_appts_st['norm_date'] == view_date_str].copy()
             if not df_today.empty:
                 df_today['เวลาเวชระเบียน'] = df_today['appointment_time'].apply(get_arrival_time_str)
                 df_today['สถานะแสดงผล'] = df_today['status'].map({
@@ -1291,16 +1367,18 @@ def show_admin_dashboard():
                 
                 df_today = df_today.sort_values(by=['appointment_time'])
 
-                # แถบติ๊กเลือกทั้งหมด
-                col_sel1, col_sel2 = st.columns([3, 7])
-                sel_all_today = col_sel1.checkbox("☑️ ติ๊กเลือกทั้งหมดในตาราง", key="sel_all_today_chk")
+                col_sel1, _ = st.columns([3, 7])
+                sel_all_today = col_sel1.checkbox("☑️ ติ๊กเลือกทั้งหมดในตาราง", key=f"sel_all_{view_date_str}")
                 
                 df_view = df_today.copy()
+                df_view['id_num'] = pd.to_numeric(df_view['id'], errors='coerce').fillna(0).astype(int)
                 df_view.insert(0, "เลือก", sel_all_today)
-                display_cols = ['เลือก', 'id', 'appointment_time', 'เวลาเวชระเบียน', 'full_name', 'service_type', 'สถานะแสดงผล', 'phone', 'notes']
+                
+                display_cols = ['เลือก', 'id_num', 'appointment_time', 'เวลาเวชระเบียน', 'full_name', 'service_type', 'สถานะแสดงผล', 'phone', 'notes']
                 
                 edited_df = st.data_editor(
                     df_view[display_cols].rename(columns={
+                        'id_num': 'ID',
                         'appointment_time': 'ช่วงเวลารักษา',
                         'full_name': 'ชื่อผู้ป่วย',
                         'service_type': 'บริการ',
@@ -1309,15 +1387,15 @@ def show_admin_dashboard():
                     }),
                     column_config={
                         "เลือก": st.column_config.CheckboxColumn("เลือก", default=False),
-                        "id": st.column_config.NumberColumn("ID", disabled=True),
+                        "ID": st.column_config.NumberColumn("ID", disabled=True),
                     },
-                    disabled=['id', 'ช่วงเวลารักษา', 'เวลาเวชระเบียน', 'ชื่อผู้ป่วย', 'บริการ', 'สถานะแสดงผล', 'เบอร์โทรศัพท์', 'หมายเหตุ'],
+                    disabled=['ID', 'ช่วงเวลารักษา', 'เวลาเวชระเบียน', 'ชื่อผู้ป่วย', 'บริการ', 'สถานะแสดงผล', 'เบอร์โทรศัพท์', 'หมายเหตุ'],
                     hide_index=True,
                     use_container_width=True,
-                    key=f"editor_today_{sel_all_today}"
+                    key=f"editor_today_{view_date_str}_{sel_all_today}"
                 )
 
-                selected_today_ids = edited_df[edited_df["เลือก"] == True]["id"].tolist()
+                selected_today_ids = edited_df[edited_df["เลือก"] == True]["ID"].tolist()
                 
                 st.markdown("---")
                 st.markdown(f"##### ⚡ จัดการสถานะให้คนไข้ที่เลือก (เลือกอยู่: **{len(selected_today_ids)}** ท่าน)")
@@ -1345,7 +1423,6 @@ def show_admin_dashboard():
 
                 with c_act3:
                     st.markdown("### ")
-                    # ปุ่มลัด: เช็คชื่อเสร็จสิ้นทันที
                     if st.button("🩺 ตรวจเสร็จสิ้นทันที", use_container_width=True, help="เปลี่ยนสถานะคนที่ติ๊กเป็น completed ทันที"):
                         if not selected_today_ids:
                             st.warning("⚠️ กรุณาติ๊กหน้าชื่อคนไข้ก่อนกดปุ่มนี้")
@@ -1355,9 +1432,9 @@ def show_admin_dashboard():
                                 st.success(f"บันทึกตรวจเสร็จสิ้น {updated_cnt} ท่าน เรียบร้อยแล้ว!")
                                 st.rerun()
             else:
-                st.info("ไม่มีรายการนัดหมายในวันนี้")
+                st.info(f"ไม่มีรายการนัดหมายในวันที่ {view_date.strftime('%d/%m/%Y')}")
         else:
-            st.info("ไม่มีรายการนัดหมายในวันนี้")
+            st.info("ไม่มีรายการนัดหมายในระบบ")
 
     # 2. รับโทรจอง / Walk-in
     elif menu == "📞 รับโทรจอง / Walk-in":
@@ -1380,7 +1457,7 @@ def show_admin_dashboard():
             with c_s1:
                 p_service = st.selectbox("บริการที่ต้องการนัด *", SERVICES)
             with c_s2:
-                p_date = st.date_input("เลือกวันที่นัดหมาย *", min_value=date.today(), value=date.today() + timedelta(days=1))
+                p_date = st.date_input("เลือกวันที่นัดหมาย *", min_value=get_bangkok_today(), value=get_bangkok_today() + timedelta(days=1))
             
             avail_slots, s_msg = get_available_slots(p_date)
             with c_s3:
@@ -1419,10 +1496,12 @@ def show_admin_dashboard():
                 arrival_time_str = get_arrival_time_str(norm_p_slot)
 
                 if not df_appts.empty:
+                    df_appts['norm_date'] = df_appts['appointment_date'].apply(normalize_date_str)
+                    df_appts['norm_status'] = df_appts['status'].astype(str).str.strip().str.lower()
                     dup_appt = df_appts[
                         (df_appts['id_card'].astype(str) == p_idcard.strip()) &
-                        (df_appts['status'].isin(['pending', 'confirmed', 'reconfirmed'])) &
-                        (df_appts['appointment_date'].astype(str) >= date.today().strftime('%Y-%m-%d'))
+                        (df_appts['norm_status'].isin(['pending', 'confirmed', 'reconfirmed'])) &
+                        (df_appts['norm_date'] >= get_bangkok_today().strftime('%Y-%m-%d'))
                     ]
                     if not dup_appt.empty:
                         d_row = dup_appt.iloc[0]
@@ -1432,7 +1511,7 @@ def show_admin_dashboard():
                 ws_p = sh.worksheet("patients")
                 df_p = get_table_df("patients")
                 p_match = df_p[df_p['id_card'].astype(str) == p_idcard.strip()]
-                now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                now_str = get_bangkok_now().strftime('%Y-%m-%d %H:%M:%S')
                 email_save = p_email.strip() if p_email.strip() else ""
 
                 if not p_match.empty:
@@ -1499,7 +1578,7 @@ def show_admin_dashboard():
 
                 st.success(f"🎉 **บันทึกนัดหมายสำเร็จ!** วันที่ {p_date.strftime('%d/%m/%Y')} ช่วงเวลา {norm_p_slot} น. (เวลาเวชระเบียน: {arrival_time_str})")
 
-    # 3. จัดการคิวนัดหมาย (มีช่องติ๊กหน้าชื่อ เปลี่ยนสถานะพร้อมกันได้ทั้งกลุ่ม)
+    # 3. จัดการคิวนัดหมาย
     elif menu == "📅 จัดการคิวนัดหมาย":
         tab_manage1, tab_manage2 = st.tabs(["🖨️ พิมพ์ใบรายชื่อคนไข้ (PDF)", "🔍 ค้นหาและเปลี่ยนสถานะนัดหมาย"])
         
@@ -1508,7 +1587,7 @@ def show_admin_dashboard():
             st.caption("เลือกวันที่ต้องการ เพื่อพิมพ์ใบรายชื่อคนไข้สำหรับเจ้าหน้าที่และแพทย์ประจำคลินิก (รูปแบบกระดาษ A4 แนวนอน)")
             
             c_pdate1, c_pdate2 = st.columns([2, 3])
-            print_date = c_pdate1.date_input("เลือกวันที่ต้องการพิมพ์ใบรายชื่อ", value=date.today())
+            print_date = c_pdate1.date_input("เลือกวันที่ต้องการพิมพ์ใบรายชื่อ", value=get_bangkok_today())
             print_date_str = print_date.strftime('%Y-%m-%d')
             
             if not df_appts.empty:
@@ -1561,10 +1640,10 @@ def show_admin_dashboard():
                 st.info("ยังไม่มีข้อมูลนัดหมายในระบบ")
 
         with tab_manage2:
-            st.subheader("🔍 ค้นหาและเปลี่ยนสถานะนัดหมาย (ติ๊กหน้าชื่อเพื่อเปลี่ยนทีละคนหรือทั้งกลุ่ม)")
+            st.subheader("🔍 ค้นหาและเปลี่ยนสถานะนัดหมาย (ติ๊กหน้าชื่อเพื่อเปลี่ยนสถานะ)")
             col1, col2 = st.columns(2)
-            start_d = col1.date_input("ตั้งแต่วันที่", value=date.today())
-            end_d = col2.date_input("ถึงวันที่", value=date.today() + timedelta(days=7))
+            start_d = col1.date_input("ตั้งแต่วันที่", value=get_bangkok_today())
+            end_d = col2.date_input("ถึงวันที่", value=get_bangkok_today() + timedelta(days=7))
             
             if not df_appts.empty:
                 df_appts_f = df_appts.copy()
@@ -1588,12 +1667,14 @@ def show_admin_dashboard():
                     sel_all_filtered = col_m_sel1.checkbox("☑️ ติ๊กเลือกทั้งหมดในช่วงเวลานี้", key="sel_all_filtered_chk")
                     
                     df_filtered_view = df_filtered.copy()
+                    df_filtered_view['id_num'] = pd.to_numeric(df_filtered_view['id'], errors='coerce').fillna(0).astype(int)
                     df_filtered_view.insert(0, "เลือก", sel_all_filtered)
                     
-                    cols_to_show = ['เลือก', 'id', 'appointment_date', 'appointment_time', 'เวลาเวชระเบียน', 'full_name', 'service_type', 'สถานะแสดงผล', 'phone', 'notes']
+                    cols_to_show = ['เลือก', 'id_num', 'appointment_date', 'appointment_time', 'เวลาเวชระเบียน', 'full_name', 'service_type', 'สถานะแสดงผล', 'phone', 'notes']
                     
                     edited_manage_df = st.data_editor(
                         df_filtered_view[cols_to_show].rename(columns={
+                            'id_num': 'ID',
                             'appointment_date': 'วันที่นัดหมาย',
                             'appointment_time': 'ช่วงเวลารักษา',
                             'full_name': 'ชื่อผู้ป่วย',
@@ -1603,15 +1684,15 @@ def show_admin_dashboard():
                         }),
                         column_config={
                             "เลือก": st.column_config.CheckboxColumn("เลือก", default=False),
-                            "id": st.column_config.NumberColumn("ID", disabled=True),
+                            "ID": st.column_config.NumberColumn("ID", disabled=True),
                         },
-                        disabled=['id', 'วันที่นัดหมาย', 'ช่วงเวลารักษา', 'เวลาเวชระเบียน', 'ชื่อผู้ป่วย', 'บริการ', 'สถานะแสดงผล', 'เบอร์โทรศัพท์', 'หมายเหตุ'],
+                        disabled=['ID', 'วันที่นัดหมาย', 'ช่วงเวลารักษา', 'เวลาเวชระเบียน', 'ชื่อผู้ป่วย', 'บริการ', 'สถานะแสดงผล', 'เบอร์โทรศัพท์', 'หมายเหตุ'],
                         hide_index=True,
                         use_container_width=True,
                         key=f"editor_filtered_{sel_all_filtered}"
                     )
 
-                    selected_filter_ids = edited_manage_df[edited_manage_df["เลือก"] == True]["id"].tolist()
+                    selected_filter_ids = edited_manage_df[edited_manage_df["เลือก"] == True]["ID"].tolist()
 
                     st.markdown("---")
                     st.markdown(f"##### 💾 เปลี่ยนสถานะให้รายการที่เลือก (เลือกอยู่: **{len(selected_filter_ids)}** รายการ)")
@@ -1647,7 +1728,7 @@ def show_admin_dashboard():
         st.subheader("🗓️ กำหนด Slot ย่อย และกระดานวันทำการ")
         
         col_pick1, _ = st.columns([2, 3])
-        start_of_current_week = date.today() - timedelta(days=date.today().weekday())
+        start_of_current_week = get_bangkok_today() - timedelta(days=get_bangkok_today().weekday())
         selected_monday = col_pick1.date_input("เลือกวันจันทร์ของสัปดาห์ที่ต้องการดู", value=start_of_current_week)
         week_monday = selected_monday - timedelta(days=selected_monday.weekday())
         week_sunday = week_monday + timedelta(days=6)
@@ -1709,8 +1790,8 @@ def show_admin_dashboard():
             st.markdown("##### กำหนดช่วงเวลาและคิว เหมายกช่วง/ยกเดือน (เช่น 1-30 ก.ย.)")
             with st.form("form_batch_slot"):
                 cb_d1, cb_d2 = st.columns(2)
-                b_start = cb_d1.date_input("ตั้งแต่วันที่", value=date.today())
-                b_end = cb_d2.date_input("จนถึงวันที่", value=date.today() + timedelta(days=30))
+                b_start = cb_d1.date_input("ตั้งแต่วันที่", value=get_bangkok_today())
+                b_end = cb_d2.date_input("จนถึงวันที่", value=get_bangkok_today() + timedelta(days=30))
                 
                 day_opts = {0: "วันจันทร์", 1: "วันอังคาร", 2: "วันพุธ", 3: "วันพฤหัสบดี", 4: "วันศุกร์", 5: "วันเสาร์", 6: "วันอาทิตย์"}
                 b_days = st.multiselect("เลือกวันในสัปดาห์", options=list(day_opts.keys()), default=[0, 1, 2, 3, 4], format_func=lambda x: day_opts[x])
@@ -1762,7 +1843,7 @@ def show_admin_dashboard():
             st.markdown("##### เพิ่มช่วงเวลาย่อยในวันใดวันหนึ่ง")
             with st.form("form_single_slot"):
                 c_s1, c_s2, c_s3, c_s4 = st.columns(4)
-                s_date = c_s1.date_input("เลือกวันที่", value=date.today())
+                s_date = c_s1.date_input("เลือกวันที่", value=get_bangkok_today())
                 s_start = c_s2.time_input("เวลาเริ่ม", value=time(8, 30))
                 s_end = c_s3.time_input("เวลาสิ้นสุด", value=time(11, 0))
                 s_cap = c_s4.number_input("จำนวนคิว", min_value=1, max_value=50, value=10)
@@ -1783,7 +1864,7 @@ def show_admin_dashboard():
             st.markdown("##### สั่งปิดทำการทั้งวัน (เช่น วันหยุดนักขัตฤกษ์ / ปิดซ่อมยูนิต)")
             with st.form("form_close_day"):
                 cc1, cc2 = st.columns(2)
-                cl_date = cc1.date_input("เลือกวันที่ต้องการปิดทำการ", value=date.today())
+                cl_date = cc1.date_input("เลือกวันที่ต้องการปิดทำการ", value=get_bangkok_today())
                 cl_note = cc2.text_input("สาเหตุที่ปิด", placeholder="เช่น วันหยุดราชการ, วันหยุดนักขัตฤกษ์")
                 
                 if st.form_submit_button("🔴 สั่งปิดทำการทั้งวัน", type="primary"):
@@ -1806,8 +1887,8 @@ def show_admin_dashboard():
         with tab_slot4:
             st.markdown("##### 🗓️ ลบ Slot ตามช่วงวันที่ (แนะนำ)")
             col_del_r1, col_del_r2, col_del_r3 = st.columns([2, 2, 2])
-            del_from = col_del_r1.date_input("ลบตั้งแต่วันที่", value=date.today(), key="del_from_d")
-            del_to = col_del_r2.date_input("จนถึงวันที่", value=date.today() + timedelta(days=30), key="del_to_d")
+            del_from = col_del_r1.date_input("ลบตั้งแต่วันที่", value=get_bangkok_today(), key="del_from_d")
+            del_to = col_del_r2.date_input("จนถึงวันที่", value=get_bangkok_today() + timedelta(days=30), key="del_to_d")
             col_del_r3.markdown("### ")
             if col_del_r3.button("🗑️ ล้าง Slot ในช่วงนี้", type="primary", use_container_width=True):
                 ws_s = sh.worksheet("daily_schedule")
@@ -1829,7 +1910,7 @@ def show_admin_dashboard():
 
             st.markdown("---")
             st.markdown("##### 📋 ตรวจสอบรายการ Slot ทั้งหมดในระบบ")
-            view_d = st.date_input("เลือกดูตั้งแต่ช่วงวันที่", value=date.today() - timedelta(days=7))
+            view_d = st.date_input("เลือกดูตั้งแต่ช่วงวันที่", value=get_bangkok_today() - timedelta(days=7))
             df_cur = get_table_df("daily_schedule")
             if not df_cur.empty:
                 df_cur['norm_date'] = df_cur['schedule_date'].apply(normalize_date_str)
@@ -1856,7 +1937,7 @@ def show_admin_dashboard():
                     st.warning(f"ไม่พบ Slot รหัส {del_id}")
                 st.rerun()
                 
-            del_all_date = cd2.date_input("หรือเลือกลบ Slot ทั้งหมดของวันใดวันหนึ่ง", value=date.today(), key="del_single_day")
+            del_all_date = cd2.date_input("หรือเลือกลบ Slot ทั้งหมดของวันใดวันหนึ่ง", value=get_bangkok_today(), key="del_single_day")
             if cd2.button("🗑️ ล้างตารางเวลาทั้งหมดของวันนี้"):
                 ws_s = sh.worksheet("daily_schedule")
                 df_cur = get_table_df("daily_schedule")
@@ -1889,7 +1970,7 @@ def show_admin_dashboard():
         st.caption("ระบบจะส่งอีเมลแจ้งเตือนนัดหมาย และให้คนไข้กดยืนยันการเข้ารับบริการ (สถานะจะเปลี่ยนเป็นสีเขียวในระบบ) หรือกดยกเลิกนัดได้ทันที")
         
         if st.button("🚀 ส่งอีเมลแจ้งเตือนทันที", type="primary"):
-            tomorrow_dt = date.today() + timedelta(days=1)
+            tomorrow_dt = get_bangkok_today() + timedelta(days=1)
             tomorrow_str = tomorrow_dt.strftime('%Y-%m-%d')
             tomorrow_formatted = tomorrow_dt.strftime('%d/%m/%Y')
 
@@ -1906,8 +1987,10 @@ def show_admin_dashboard():
             
             sent_count = 0
             ws_a = sh.worksheet("appointments")
-            records = ws_a.get_all_records()
-            headers = ws_a.row_values(1)
+            all_a_rows = ws_a.get_all_values()
+            headers = [h.strip().lower() for h in all_a_rows[0]]
+            id_col = headers.index("id")
+            remind_col = headers.index("reminder_sent") + 1
             base_url = "https://dental-booking-s7ybkcswqp4qkxg2am8dvl.streamlit.app"
             
             for _, row in targets.iterrows():
@@ -1981,9 +2064,9 @@ def show_admin_dashboard():
                 </div>
                 """
                 if send_email(email_addr, "เตือนนัดหมายทันตกรรมวันพรุ่งนี้ (โปรดยืนยันรับบริการ)", body):
-                    for idx, r in enumerate(records, start=2):
-                        if str(r.get('id')) == str(appt_id):
-                            ws_a.update_cell(idx, headers.index('reminder_sent') + 1, 1)
+                    for idx, r in enumerate(all_a_rows[1:], start=2):
+                        if r[id_col].strip() == str(appt_id).strip():
+                            ws_a.update_cell(idx, remind_col, 1)
                             break
                     sent_count += 1
             st.cache_data.clear()
