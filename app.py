@@ -305,6 +305,7 @@ def get_arrival_time_str(slot_label: str) -> str:
     except Exception:
         return "ก่อนเวลานัดหมาย 30 นาที"
 
+# ========== กล่องเงื่อนไขและข้อตกลง HTML (เพิ่มเงื่อนไขอายุต่ำกว่า 18 ปีบริบูรณ์) ==========
 TERMS_AND_CONDITIONS_HTML = """
 <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem; margin-bottom: 1rem;">
     <h4 style="color: #166534; margin-top: 0; margin-bottom: 0.75rem; font-size: 1.05rem;">🏥 เงื่อนไขและข้อตกลงการเข้ารับบริการนัดหมายออนไลน์</h4>
@@ -314,6 +315,7 @@ TERMS_AND_CONDITIONS_HTML = """
             <li><b>การยืนยันนัด:</b> ผู้รับบริการต้อง <b>ยืนยันนัดหมายใน E- mail ที่ส่งให้ท่าน ก่อนเข้ารับบริการ 1 วัน หรือโทรยืนยันนัดหมาย เบอร์ 02 453 0526 ต่อ 302</b></li>
             <li><b>การลงทะเบียน:</b> ผู้รับบริการต้องมาติดต่อที่ห้องเวชระเบียน เพื่อตรวจสอบสิทธิ์และทำประวัติ <b style="color: #dc2626;">รอบเวลา 16.00 - 17.00 น. ลงทะเบียนเวลา 15.00 น. / รอบเวลา 17.00 - 18.00 น. ลงทะเบียนเวลา 16.30 น.</b></li>
             <li><b>เอกสารที่ต้องเตรียม:</b> โปรดนำ <b>บัตรประจำตัวประชาชนตัวจริง</b> มาแสดงทุกครั้งที่เข้ารับบริการ</li>
+            <li><b>ผู้รับบริการอายุต่ำกว่า 18 ปี:</b> <b style="color: #dc2626;">ผู้ที่มีอายุต่ำกว่า 18 ปี บริบูรณ์ ต้องมีผู้ปกครองมาด้วยทุกครั้ง</b></li>
             <li><b>ประวัติสุขภาพ:</b> หากมีโรคประจำตัว โปรดนำยาทั้งหมดมาด้วย หากแพ้ยา โปรดนำบัตรแพ้ยามาด้วย</li>
         </ul>
         <p style="margin-bottom: 4px;"><b>2. ข้อกำหนดเรื่องเวลาและการรักษาคิว</b></p>
@@ -698,7 +700,7 @@ def get_available_slots(appointment_date: date, allow_admin_override: bool = Fal
     today_dt = get_bangkok_today()
     now_dt = get_bangkok_now()
     
-    # 🔒 ข้อความปิดรับจองออนไลน์ในวันนัดหมายปัจจุบันหลังเวลา 15.30 น. ตามที่กำหนด
+    # 🔒 ข้อความปิดรับจองออนไลน์ในวันนัดหมายปัจจุบันหลังเวลา 15.30 น.
     if not allow_admin_override and appointment_date == today_dt and now_dt.time() >= time(15, 30):
         return [], "ปิดรับจองออนไลน์สำหรับวันนี้แล้วตั้งแต่เวลา 15.30 น. เพื่อสรุปยอดคิว โปรดจองวันรับบริการวันถัดไป"
 
@@ -891,7 +893,6 @@ def show_booking_form():
             default_date = today_bkk + timedelta(days=1) if is_past_today_cutoff else today_bkk
             appointment_date = st.date_input("เลือกวันที่ต้องการนัดหมาย *", min_value=min_date, max_value=max_date, value=default_date)
             
-            # แจ้งเตือนข้อความตามที่กำหนดเมื่อผู้ใช้เลือกวันปัจจุบันหลัง 15.30 น.
             if appointment_date == today_bkk and is_past_today_cutoff:
                 st.warning("⛔ ปิดรับจองออนไลน์สำหรับวันนี้แล้วตั้งแต่เวลา 15.30 น. เพื่อสรุปยอดคิว โปรดจองวันรับบริการวันถัดไป")
             
@@ -1531,7 +1532,7 @@ def show_admin_dashboard():
                     st.markdown("### ")
                     if st.button("💾 บันทึกเปลี่ยนสถานะ", type="primary", use_container_width=True):
                         if not selected_today_ids:
-                            st.warning("⚠️️ กรุณาทำเครื่องหมายติ๊กถูกที่หน้าชื่อคนไข้อย่างน้อย 1 ท่าน")
+                            st.warning("⚠️ กรุณาทำเครื่องหมายติ๊กถูกที่หน้าชื่อคนไข้อย่างน้อย 1 ท่าน")
                         else:
                             with st.spinner("กำลังอัปเดตข้อมูล..."):
                                 updated_cnt = batch_update_appointments_status(selected_today_ids, new_bulk_status[0], reported_by=st.session_state.admin_user)
@@ -2055,7 +2056,7 @@ def show_admin_dashboard():
                 st.rerun()
                 
             del_all_date = cd2.date_input("หรือเลือกลบ Slot ทั้งหมดของวันใดวันหนึ่ง", value=get_bangkok_today(), key="del_single_day")
-            if cd2.button("🗑️ ล้างตารางเวลาทั้งหมดของวันนี้"):
+            if cd2.button("🗑️️ ล้างตารางเวลาทั้งหมดของวันนี้"):
                 ws_s = sh.worksheet("daily_schedule")
                 df_cur = get_table_df("daily_schedule")
                 if not df_cur.empty:
@@ -2105,7 +2106,6 @@ def show_admin_dashboard():
             df_appts_t['norm_date'] = df_appts_t['appointment_date'].apply(normalize_date_str)
             df_appts_t['norm_status'] = df_appts_t['status'].astype(str).str.strip().str.lower()
 
-        # แท็บ 1: นัดหมายวันพรุ่งนี้
         with tab_remind_tomorrow:
             targets_tomorrow = pd.DataFrame()
             if not df_appts_t.empty:
@@ -2126,7 +2126,6 @@ def show_admin_dashboard():
             if c_tm2.button("🚀 ส่งแจ้งเตือนวันพรุ่งนี้", type="primary", use_container_width=True, disabled=targets_tomorrow.empty):
                 send_reminder_batch(targets_tomorrow, "วันพรุ่งนี้", tomorrow_formatted)
 
-        # แท็บ 2: นัดหมายวันนี้ (สำหรับเคสจองเช้าวันเดียวกัน)
         with tab_remind_today:
             targets_today = pd.DataFrame()
             if not df_appts_t.empty:
