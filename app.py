@@ -1299,32 +1299,42 @@ def show_booking_form():
         )
         st.markdown("<br>", unsafe_allow_html=True)
 
-        submitted = st.button(
+        # ---------- ใช้ Placeholder เพื่อสลับปุ่มทันทีที่กด ----------
+        submit_placeholder = st.empty()
+        submitted = submit_placeholder.button(
             "📅 ยืนยันข้อมูลและส่งคำขอจองคิว",
             type="primary",
             use_container_width=True,
         )
 
     if submitted:
+        # เปลี่ยนปุ่มเป็นสีเทา กดซ้ำไม่ได้ทันที
+        submit_placeholder.button("⏳ กำลังประมวลผล กรุณารอสักครู่...", disabled=True, use_container_width=True)
+
         if not agree_terms:
             st.error(
                 "❌"
                 " กรุณาทำเครื่องหมายถูกเพื่อยอมรับเงื่อนไขและข้อตกลงก่อนส่งคำขอจองคิว"
             )
+            # คืนปุ่มให้กดใหม่ได้
+            submit_placeholder.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
             return
 
         if not available_slots or not selected_time_slot:
             st.error(f"❌ วันที่เลือกไม่สามารถจองได้: {status_msg}")
+            submit_placeholder.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
             return
 
         if not all(
             [full_name.strip(), id_card.strip(), phone.strip(), email.strip()]
         ):
             st.error("❌ กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบทุกช่อง")
+            submit_placeholder.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
             return
 
         if len(id_card.strip()) != 13 or not id_card.strip().isdigit():
             st.error("❌ เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น")
+            submit_placeholder.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
             return
 
         if check_blacklist(id_card=id_card.strip()):
@@ -1333,9 +1343,12 @@ def show_booking_form():
                 " บัญชีนี้ถูกระงับสิทธิ์ชั่วคราวเนื่องจากไม่มาตามเวลานัดหมาย"
                 " กรุณาติดต่อคลินิก"
             )
+            submit_placeholder.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
             return
+
         if check_blacklist(phone=phone.strip()):
             st.error("⚠️ เบอร์โทรศัพท์นี้ถูกระงับสิทธิ์ชั่วคราว กรุณาติดต่อคลินิก")
+            submit_placeholder.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True)
             return
 
         clean_time_label = selected_time_slot.split(" น.")[0]
