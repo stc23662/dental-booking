@@ -1113,6 +1113,14 @@ def get_available_slots(
 
 
 def show_booking_form():
+    # ---------- Initialize submitting state ----------
+    if "is_submitting" not in st.session_state:
+        st.session_state.is_submitting = False
+
+    def disable_submit_button():
+        st.session_state.is_submitting = True
+    # -------------------------------------------------
+
     is_sys_open = get_system_status()
     is_admin_logged_in = bool(st.session_state.get("admin_user"))
 
@@ -1211,6 +1219,7 @@ def show_booking_form():
             use_container_width=True,
         ):
             st.session_state.just_booked_data = None
+            st.session_state.is_submitting = False # Reset status
             st.rerun()
         return
 
@@ -1299,11 +1308,15 @@ def show_booking_form():
         )
         st.markdown("<br>", unsafe_allow_html=True)
 
+        # ---------- Button with Disable State ----------
         submitted = st.button(
             "📅 ยืนยันข้อมูลและส่งคำขอจองคิว",
             type="primary",
             use_container_width=True,
+            on_click=disable_submit_button,
+            disabled=st.session_state.is_submitting
         )
+        # -----------------------------------------------
 
     if submitted:
         if not agree_terms:
@@ -1311,20 +1324,24 @@ def show_booking_form():
                 "❌"
                 " กรุณาทำเครื่องหมายถูกเพื่อยอมรับเงื่อนไขและข้อตกลงก่อนส่งคำขอจองคิว"
             )
+            st.session_state.is_submitting = False
             return
 
         if not available_slots or not selected_time_slot:
             st.error(f"❌ วันที่เลือกไม่สามารถจองได้: {status_msg}")
+            st.session_state.is_submitting = False
             return
 
         if not all(
             [full_name.strip(), id_card.strip(), phone.strip(), email.strip()]
         ):
             st.error("❌ กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบทุกช่อง")
+            st.session_state.is_submitting = False
             return
 
         if len(id_card.strip()) != 13 or not id_card.strip().isdigit():
             st.error("❌ เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลักเท่านั้น")
+            st.session_state.is_submitting = False
             return
 
         if check_blacklist(id_card=id_card.strip()):
@@ -1333,9 +1350,11 @@ def show_booking_form():
                 " บัญชีนี้ถูกระงับสิทธิ์ชั่วคราวเนื่องจากไม่มาตามเวลานัดหมาย"
                 " กรุณาติดต่อคลินิก"
             )
+            st.session_state.is_submitting = False
             return
         if check_blacklist(phone=phone.strip()):
             st.error("⚠️ เบอร์โทรศัพท์นี้ถูกระงับสิทธิ์ชั่วคราว กรุณาติดต่อคลินิก")
+            st.session_state.is_submitting = False
             return
 
         clean_time_label = selected_time_slot.split(" น.")[0]
@@ -1380,6 +1399,7 @@ def show_booking_form():
                         ),
                         "email": email.strip(),
                     }
+                    st.session_state.is_submitting = False
                     st.rerun()
 
                 sh = get_spreadsheet()
@@ -1468,6 +1488,7 @@ def show_booking_form():
                 "arrival_time": arrival_time_str,
                 "email": email.strip(),
             }
+            st.session_state.is_submitting = False
             st.rerun()
 
 
