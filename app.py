@@ -331,32 +331,27 @@ def check_duplicate_appointment(
     all_appts_list, id_card, phone, full_name, appt_date_str
 ):
     clean_id = str(id_card).strip().replace("-", "").replace(" ", "")
-    clean_phone = str(phone).strip().replace("-", "").replace(" ", "")
     clean_name = str(full_name).strip().replace(" ", "").lower()
     clean_date = normalize_date_str(appt_date_str)
 
     for row in all_appts_list:
         r_id = str(row.get("id_card", "")).strip().replace("-", "").replace(" ", "")
-        r_phone = str(row.get("phone", "")).strip().replace("-", "").replace(" ", "")
         r_name = str(row.get("full_name", "")).strip().replace(" ", "").lower()
         r_status = str(row.get("status", "")).strip().lower()
         r_date = normalize_date_str(row.get("appointment_date", ""))
 
+        # ข้ามคิวที่ถูกยกเลิก หรือ ไม่มาตามนัด หรือ ตรวจเสร็จแล้ว
         if r_status not in ["pending", "confirmed", "reconfirmed"]:
             continue
 
+        # 1. เช็คเลขบัตรประชาชนซ้ำ (ถ้ามีคิวที่ยังไม่ดำเนินการ จะจองซ้ำไม่ได้)
         if clean_id and r_id:
             if clean_id == r_id or (
                 clean_id.lstrip("0") == r_id.lstrip("0") and len(clean_id) > 6
             ):
                 return True, row
 
-        if clean_phone and r_phone:
-            if clean_phone == r_phone or (
-                clean_phone.lstrip("0") == r_phone.lstrip("0") and len(clean_phone) > 6
-            ):
-                return True, row
-
+        # 2. เช็คชื่อ-นามสกุลซ้ำ "ในวันเดียวกัน" (ป้องกันคนพิมพ์เลขบัตรผิดแต่ชื่อเดิม)
         if clean_name and r_name and (clean_name == r_name):
             if clean_date == r_date:
                 return True, row
