@@ -1366,8 +1366,10 @@ def show_admin_dashboard():
 
     if not st.session_state.admin_user:
         st.sidebar.subheader("🔒 เข้าสู่ระบบเจ้าหน้าที่")
-        user_input = st.sidebar.text_input("ชื่อผู้ใช้งาน (Username)")
-        pwd = st.sidebar.text_input("รหัสผ่าน", type="password")
+        # 💡 เพิ่ม key ให้ text_input เพื่อป้องกันข้อมูลหายและปุ่มนิ่ง
+        user_input = st.sidebar.text_input("ชื่อผู้ใช้งาน (Username)", key="admin_username_input")
+        pwd = st.sidebar.text_input("รหัสผ่าน", type="password", key="admin_password_input")
+        
         if st.sidebar.button("เข้าสู่ระบบ", type="primary", use_container_width=True):
             if verify_admin_login(user_input, pwd):
                 st.session_state.admin_user = user_input.strip().lower().replace(" ", "")
