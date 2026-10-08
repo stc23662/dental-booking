@@ -1236,6 +1236,12 @@ def show_booking_form():
             email = st.text_input(
                 "อีเมลสำหรับรับการยืนยัน *", placeholder="your_email@example.com"
             )
+            st.markdown(
+                "<div style='color: #dc2626; font-size: 0.85rem; font-weight: 600; margin-top: -10px; margin-bottom: 10px;'>"
+                "⚠️ โปรดตรวจสอบความถูกต้องของ E-mail. หากกรอกไม่ถูกต้องท่านจะไม่ได้รับ แจ้งการยืนยันรับบริการ"
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("2. เลือกบริการและวันเวลา")
@@ -2953,12 +2959,120 @@ def show_admin_dashboard():
 
         st.markdown("<br><hr>", unsafe_allow_html=True)
 
-        tab_slot1, tab_slot2, tab_slot3, tab_slot4 = st.tabs([
+        tab_edit_day, tab_slot1, tab_slot2, tab_slot3, tab_slot4 = st.tabs([
+            "✏️ ปรับลด/เพิ่มคิวรายวัน",
             "⚡ กำหนด Slot เหมายกเดือน",
             "➕ เพิ่ม Slot เจาะจงเฉพาะวัน",
             "🚫 สั่งปิดทำการทั้งวัน",
             "🗑️ ดูรายการและล้าง Slot",
         ])
+
+        with tab_edit_day:
+            st.markdown("##### ✏️ ปรับลด / เพิ่มจำนวนคิวรับบริการ เฉพาะวัน (เช่น หมอติดประชุมด่วน)")
+            st.caption("เลือกวันที่ต้องการปรับจำนวนคิว ระบบจะแสดงช่วงเวลาของวันนั้น พร้อมยอดคนที่จองเข้ามาแล้วเพื่อให้ปรับลดได้อย่างเหมาะสม")
+
+            c_ed1, _ = st.columns([2, 3])
+            edit_target_date = c_ed1.date_input(
+                "เลือกวันที่ต้องการปรับจำนวนคิว",
+                value=get_bangkok_today(),
+                key="edit_cap_date_picker",
+            )
+            edit_date_str = edit_target_date.strftime("%Y-%m-%d")
+
+            df_sched_cur = get_table_df("daily_schedule")
+            if not df_sched_cur.empty:
+                df_sched_cur["norm_date"] = df_sched_cur["schedule_date"].apply(normalize_date_str)
+                day_slots_edit = df_sched_cur[
+                    (df_sched_cur["norm_date"] == edit_date_str)
+                    & (df_sched_cur["is_open"].astype(int) == 1)
+                ].sort_values(by=["start_time"])
+            else:
+                day_slots_edit = pd.DataFrame()
+
+            if day_slots_edit.empty:
+                st.info(
+                    f"ℹ️ วันที่ {edit_target_date.strftime('%d/%m/%Y')} ยังไม่มีการเปิด Slot ทำการ หรือถูกสั่งปิดทำการไว้"
+                )
+            else:
+                # คำนวณยอดจองปัจจุบันในวันนั้น
+                if not df_appts.empty:
+                    df_a_temp = df_appts.copy()
+                    df_a_temp["norm_date"] = df_a_temp["appointment_date"].apply(normalize_date_str)
+                    df_a_temp["norm_time"] = df_a_temp["appointment_time"].apply(normalize_time_slot)
+                    df_a_temp["norm_status"] = df_a_temp["status"].astype(str).str.strip().str.lower()
+                    active_day_appts = df_a_temp[
+                        (df_a_temp["norm_date"] == edit_date_str)
+                        & (df_a_temp["norm_status"].isin(["pending", "confirmed", "reconfirmed", "completed"]))
+                        & (df_a_temp["id_card"].astype(str).str.strip() != "")
+                    ]
+                else:
+                    active_day_appts = pd.DataFrame(columns=["norm_time"])
+
+                with st.form("form_adjust_daily_capacity"):
+                    updated_caps = {}
+                    updated_notes = {}
+
+                    for _, s_row in day_slots_edit.iterrows():
+                        slot_id = s_row["id"]
+                        s_t = str(s_row.get("start_time", "")).strip()
+                        e_t = str(s_row.get("end_time", "")).strip()
+                        cur_max = int(pd.to_numeric(s_row.get("max_patients", 4), errors="coerce") or 4)
+                        cur_note = str(s_row.get("note", "เปิดทำการ") or "เปิดทำการ")
+
+                        norm_sl = normalize_time_slot(f"{s_t} - {e_t}")
+                        booked_n = (
+                            len(active_day_appts[active_day_appts["norm_time"] == norm_sl])
+                            if not active_day_appts.empty
+                            else 0
+                        )
+
+                        c_sl1, c_sl2, c_sl3 = st.columns([2.2, 1.3, 2.5])
+                        with c_sl1:
+                            st.markdown(f"**⏰ ช่วงเวลา {norm_sl} น.**")
+                            st.caption(
+                                f"จองแล้วตอนนี้: **{booked_n}** คิว | รับได้เดิม: **{cur_max}** คิว"
+                            )
+                        with c_sl2:
+                            new_c = st.number_input(
+                                "จำนวนคิวสูงสุดใหม่",
+                                min_value=0,
+                                max_value=100,
+                                value=cur_max,
+                                step=1,
+                                key=f"cap_in_{slot_id}_{edit_date_str}",
+                            )
+                            updated_caps[str(slot_id)] = int(new_c)
+                        with c_sl3:
+                            new_n = st.text_input(
+                                "หมายเหตุ (เช่น หมอติดประชุมด่วน)",
+                                value=cur_note,
+                                key=f"note_in_{slot_id}_{edit_date_str}",
+                            )
+                            updated_notes[str(slot_id)] = new_n.strip()
+                        st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
+
+                    if st.form_submit_button(
+                        "💾 บันทึกการปรับจำนวนคิว", type="primary", use_container_width=True
+                    ):
+                        ws_s = sh.worksheet("daily_schedule")
+                        all_s_rows = ws_s.get_all_values()
+                        s_headers = [h.strip().lower() for h in all_s_rows[0]]
+                        id_col_idx = s_headers.index("id")
+                        max_p_col = s_headers.index("max_patients") + 1
+                        note_col = s_headers.index("note") + 1
+
+                        with st.spinner("กำลังบันทึกการปรับจำนวนคิว..."):
+                            for r_idx, r_val in enumerate(all_s_rows[1:], start=2):
+                                r_id_str = str(r_val[id_col_idx]).strip()
+                                if r_id_str in updated_caps:
+                                    ws_s.update_cell(r_idx, max_p_col, updated_caps[r_id_str])
+                                    ws_s.update_cell(r_idx, note_col, updated_notes[r_id_str])
+
+                        st.cache_data.clear()
+                        st.success(
+                            f"✅ ปรับจำนวนคิวของวันที่ {edit_target_date.strftime('%d/%m/%Y')} เรียบร้อยแล้ว!"
+                        )
+                        st.rerun()
 
         with tab_slot1:
             st.markdown("##### กำหนดช่วงเวลาและคิว เหมายกช่วง/ยกเดือน (เช่น 1-30 ก.ย.)")
