@@ -425,10 +425,10 @@ def get_available_slots(appointment_date: date, allow_admin_override: bool = Fal
     return all_slots, "เปิดทำการ"
 
 # ===== NEW: เช็คสิทธิ์ก่อนจอง =====
-def check_eligibility(id_card: str, phone: str):
+def check_eligibility(id_card: str, phone: str = ""):
     clean_id = str(id_card).strip().replace("-", "").replace(" ", "")
-    clean_phone = str(phone).strip().replace("-", "").replace(" ", "")
-    bl = check_blacklist(id_card=clean_id, phone=clean_phone)
+    clean_phone = ""
+    bl = check_blacklist(id_card=clean_id)
     if bl:
         return False, f"บัญชีนี้ถูกระงับสิทธิ์ถึงวันที่ {bl.get('blacklisted_until','')} เนื่องจาก {bl.get('reason','')} กรุณาโทร 02 453 0526 ต่อ 302", None, None
     df_appts = get_table_df("appointments"); old_appt = None
@@ -437,8 +437,7 @@ def check_eligibility(id_card: str, phone: str):
         active = df_appts[df_appts["norm_status"].isin(["pending", "confirmed", "reconfirmed"])]
         for _, row in active.iterrows():
             r_id = str(row.get("id_card","")).strip().replace("-","").replace(" ","")
-            r_phone = str(row.get("phone","")).strip().replace("-","").replace(" ","")
-            if (clean_id and r_id == clean_id) or (clean_phone and r_phone == clean_phone):
+            if clean_id and r_id == clean_id:
                 old_appt = row.to_dict(); break
     if old_appt: return False, "พบคิวที่ยังรอรับบริการอยู่", old_appt, None
     df_p = get_table_df("patients"); patient_data = None
@@ -453,21 +452,16 @@ def show_eligibility_check():
     if st.session_state.eligibility_passed: return True
     with st.container(border=True):
         st.subheader("1. ตรวจสอบสิทธิ์การจอง")
-        c1, c2 = st.columns(2)
-        with c1:
-            chk_id = st.text_input("เลขประจำตัวประชาชน (13 หลัก) *", max_chars=13, key="chk_id_card")
-            if len(chk_id.strip()) == 13:
-                is_valid_id, id_msg = validate_thai_id_card(chk_id)
-                if is_valid_id: st.success("✅ เลขบัตรถูกต้อง")
-                else: st.error(f"❌ {id_msg}")
-        with c2:
-            chk_phone = st.text_input("เบอร์โทรศัพท์ที่เคยลงทะเบียน *", max_chars=10, key="chk_phone")
+        chk_id = st.text_input("เลขประจำตัวประชาชน (13 หลัก) *", max_chars=13, key="chk_id_card", placeholder="กรอกเลขบัตร 13 หลัก แล้วกดตรวจสอบสิทธิ์")
+        if len(chk_id.strip()) == 13:
+            is_valid_id, id_msg = validate_thai_id_card(chk_id)
+            if is_valid_id: st.success("✅ เลขบัตรถูกต้อง")
+            else: st.error(f"❌ {id_msg}")
         if st.button("🔍 ตรวจสอบสิทธิ์", type="primary", use_container_width=True):
             is_valid_id, id_msg = validate_thai_id_card(chk_id)
             if not is_valid_id: st.error(f"❌ {id_msg} กรุณาตรวจสอบเลขบัตรอีกครั้ง")
-            elif len(chk_phone.strip()) < 9: st.error("❌ กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง")
             else:
-                can_book, msg, old_appt, patient_data = check_eligibility(chk_id, chk_phone)
+                can_book, msg, old_appt, patient_data = check_eligibility(chk_id)
                 if not can_book and old_appt is not None:
                     st.warning(f"⛔ {msg}")
                     st.markdown(f"""<div style="background:#fffbeb; border:2px solid #f59e0b; border-radius:12px; padding:16px;"><b>ท่านมีคิวที่ยังรอรับบริการอยู่:</b><br>📅 วันที่: {old_appt.get('appointment_date')} | ⏰ เวลา: {old_appt.get('appointment_time')} น.<br>🦷 บริการ: {old_appt.get('service_type')} | 📌 สถานะ: {old_appt.get('status')}<br><span style="color:#dc2626;">ท่านไม่สามารถจองซ้ำได้ จนกว่าจะรับบริการเสร็จ หรือยกเลิกคิวเดิมก่อน</span></div>""", unsafe_allow_html=True)
@@ -477,7 +471,7 @@ def show_eligibility_check():
                 else:
                     st.success("✅ ตรวจสอบสิทธิ์ผ่าน! ท่านสามารถจองคิวได้")
                     st.session_state.eligibility_passed = True
-                    st.session_state.prefill_data = {"id_card": chk_id.strip(), "phone": chk_phone.strip(), "full_name": str(patient_data.get("full_name","")) if patient_data else "", "email": str(patient_data.get("email","")) if patient_data else "", "is_returning": bool(patient_data)}
+                    st.session_state.prefill_data = {"id_card": chk_id.strip(), "phone": str(patient_data.get("phone","")) if patient_data else "", "full_name": str(patient_data.get("full_name","")) if patient_data else "", "email": str(patient_data.get("email","")) if patient_data else "", "is_returning": bool(patient_data)}
                     if patient_data: st.info(f"👋 ยินดีต้อนรับกลับ {patient_data.get('full_name')} ระบบดึงข้อมูลเดิมของท่านมาให้แล้ว")
                     st.rerun()
     return False
