@@ -127,6 +127,19 @@ def validate_thai_id_card(id_card: str):
     if check_digit != int(clean_id[12]):
         return False, f"เลขบัตรประชาชนไม่ถูกต้อง (เลขหลักสุดท้ายไม่ตรงตามสูตร Check Digit ควรเป็น {check_digit})"
     return True, "เลขบัตรประชาชนถูกต้อง"
+def validate_passport(passport_no: str):
+    clean = str(passport_no or "").strip().replace(" ", "").replace("-", "")
+    if len(clean) < 6: return False, "เลขหนังสือเดินทางต้องมีอย่างน้อย 6 ตัวอักษร"
+    if len(clean) > 15: return False, "เลขหนังสือเดินทางต้องไม่เกิน 15 ตัวอักษร"
+    if not clean.isalnum(): return False, "เลขหนังสือเดินทางต้องเป็นตัวอักษร A-Z และตัวเลขเท่านั้น"
+    return True, "เลขหนังสือเดินทางถูกต้อง"
+
+def validate_identity(id_value: str, identity_type: str = "thai"):
+    # identity_type: "thai" = บัตรประชาชน 13 หลัก, "foreigner" = หนังสือเดินทาง
+    if identity_type == "foreigner":
+        return validate_passport(id_value)
+    return validate_thai_id_card(id_value)
+
 def check_duplicate_appointment(all_appts_list, id_card, phone, full_name, appt_date_str):
     clean_id = str(id_card).strip().replace("-", "").replace(" ", "")
     clean_name = str(full_name).strip().replace(" ", "").lower()
@@ -452,14 +465,24 @@ def show_eligibility_check():
     if st.session_state.eligibility_passed: return True
     with st.container(border=True):
         st.subheader("1. ตรวจสอบสิทธิ์การจอง")
-        chk_id = st.text_input("เลขประจำตัวประชาชน (13 หลัก) *", max_chars=13, key="chk_id_card", placeholder="กรอกเลขบัตร 13 หลัก แล้วกดตรวจสอบสิทธิ์")
-        if len(chk_id.strip()) == 13:
-            is_valid_id, id_msg = validate_thai_id_card(chk_id)
-            if is_valid_id: st.success("✅ เลขบัตรถูกต้อง")
-            else: st.error(f"❌ {id_msg}")
+        chk_type = st.radio("ประเภทผู้รับบริการ", ["🇹🇭 คนไทย (ใช้เลขบัตรประชาชน 13 หลัก)", "🌍 ต่างชาติ (ใช้เลขหนังสือเดินทาง)"], horizontal=True, key="chk_identity_type")
+        chk_is_foreigner = "ต่างชาติ" in chk_type
+        if chk_is_foreigner:
+            chk_id = st.text_input("เลขหนังสือเดินทาง (Passport No.) *", max_chars=15, key="chk_id_card", placeholder="กรอกเลขหนังสือเดินทาง เช่น AB1234567")
+            if len(chk_id.strip()) >= 6:
+                is_valid_id, id_msg = validate_passport(chk_id)
+                if is_valid_id: st.success("✅ เลขหนังสือเดินทางถูกต้อง")
+                else: st.error(f"❌ {id_msg}")
+        else:
+            chk_id = st.text_input("เลขประจำตัวประชาชน (13 หลัก) *", max_chars=13, key="chk_id_card", placeholder="กรอกเลขบัตร 13 หลัก แล้วกดตรวจสอบสิทธิ์")
+            if len(chk_id.strip()) == 13:
+                is_valid_id, id_msg = validate_thai_id_card(chk_id)
+                if is_valid_id: st.success("✅ เลขบัตรถูกต้อง")
+                else: st.error(f"❌ {id_msg}")
         if st.button("🔍 ตรวจสอบสิทธิ์", type="primary", use_container_width=True):
-            is_valid_id, id_msg = validate_thai_id_card(chk_id)
-            if not is_valid_id: st.error(f"❌ {id_msg} กรุณาตรวจสอบเลขบัตรอีกครั้ง")
+            chk_identity = "foreigner" if chk_is_foreigner else "thai"
+            is_valid_id, id_msg = validate_identity(chk_id, chk_identity)
+            if not is_valid_id: st.error(f"❌ {id_msg} กรุณาตรวจสอบอีกครั้ง")
             else:
                 can_book, msg, old_appt, patient_data = check_eligibility(chk_id)
                 if not can_book and old_appt is not None:
@@ -471,7 +494,7 @@ def show_eligibility_check():
                 else:
                     st.success("✅ ตรวจสอบสิทธิ์ผ่าน! ท่านสามารถจองคิวได้")
                     st.session_state.eligibility_passed = True
-                    st.session_state.prefill_data = {"id_card": chk_id.strip(), "phone": str(patient_data.get("phone","")) if patient_data else "", "full_name": str(patient_data.get("full_name","")) if patient_data else "", "email": str(patient_data.get("email","")) if patient_data else "", "is_returning": bool(patient_data)}
+                    st.session_state.prefill_data = {"id_card": chk_id.strip(), "identity_type": chk_identity, "phone": str(patient_data.get("phone","")) if patient_data else "", "full_name": str(patient_data.get("full_name","")) if patient_data else "", "email": str(patient_data.get("email","")) if patient_data else "", "is_returning": bool(patient_data)}
                     if patient_data: st.info(f"👋 ยินดีต้อนรับกลับ {patient_data.get('full_name')} ระบบดึงข้อมูลเดิมของท่านมาให้แล้ว")
                     st.rerun()
     return False
@@ -505,12 +528,18 @@ def show_booking_form():
         st.subheader("1. ข้อมูลผู้เข้ารับบริการ")
         if is_returning: st.success(f"✅ ดึงข้อมูลเดิมของ {pre.get('full_name')} มาให้แล้ว กรุณาตรวจสอบความถูกต้อง")
         col1, col2 = st.columns(2)
+        _identity_type = pre.get("identity_type", "thai")
+        _is_foreigner = _identity_type == "foreigner"
+        _id_label = "เลขหนังสือเดินทาง (Passport No.) *" if _is_foreigner else "เลขประจำตัวประชาชน (13 หลัก) *"
+        _id_placeholder = "เช่น AB1234567" if _is_foreigner else "xxxxxxxxxxxxx"
+        _id_max = 15 if _is_foreigner else 13
         with col1:
             full_name = st.text_input("ชื่อ - นามสกุล *", placeholder="ระบุชื่อและนามสกุลจริง", value=pre.get("full_name", ""))
-            id_card = st.text_input("เลขประจำตัวประชาชน (13 หลัก) *", placeholder="xxxxxxxxxxxxx", max_chars=13, value=pre.get("id_card", ""), disabled=bool(pre.get("id_card")))
-            if id_card and len(id_card.strip()) == 13:
-                _v,_m = validate_thai_id_card(id_card)
-                if _v: st.success("✅ เลขบัตรถูกต้อง")
+            if _is_foreigner: st.info("🌍 ผู้รับบริการต่างชาติ - ใช้เลขหนังสือเดินทางแทนเลขบัตรประชาชน")
+            id_card = st.text_input(_id_label, placeholder=_id_placeholder, max_chars=_id_max, value=pre.get("id_card", ""), disabled=bool(pre.get("id_card")))
+            if id_card and len(id_card.strip()) >= 6:
+                _v,_m = validate_identity(id_card, _identity_type)
+                if _v: st.success("✅ เลขถูกต้อง")
                 else: st.error(f"❌ {_m}")
         with col2:
             phone = st.text_input("เบอร์โทรศัพท์ติดต่อ *", placeholder="08xxxxxxxx", max_chars=10, value=pre.get("phone", ""))
@@ -539,7 +568,7 @@ def show_booking_form():
         submit_placeholder = st.empty()
         submitted = submit_placeholder.button("📅 ยืนยันข้อมูลและส่งคำขอจองคิว", type="primary", use_container_width=True, key="btn_main_submit")
     if submitted:
-        is_valid_id, id_msg = validate_thai_id_card(id_card)
+        is_valid_id, id_msg = validate_identity(id_card, pre.get("identity_type", "thai"))
         if not is_valid_id: st.error(f"❌ {id_msg}"); return
         if not agree_terms: st.error("❌ กรุณาทำเครื่องหมายถูกเพื่อยอมรับเงื่อนไขก่อนส่งคำขอจองคิว"); return
         if not available_slots or not selected_time_slot: st.error(f"❌ วันที่เลือกไม่สามารถจองได้: {status_msg}"); return
@@ -732,12 +761,19 @@ def show_admin_dashboard():
         st.subheader("📞 รับโทรจองคิว / ผู้ป่วย Walk-in ประจำศูนย์ฯ"); st.info(f"👤 ผู้ทำรายการขณะนี้: **{st.session_state.admin_user}** ({user_role_display}) ➔ ระบบจะบันทึก: **{booking_agency}**")
         with st.container(border=True):
             channel = st.radio("ช่องทางการติดต่อ", ["📞 โทรศัพท์จอง", "🚶 ติดต่อด้วยตนเอง (Walk-in)"], horizontal=True)
+            p_identity = st.radio("ประเภทผู้รับบริการ", ["🇹🇭 คนไทย (บัตรประชาชน)", "🌍 ต่างชาติ (หนังสือเดินทาง)"], horizontal=True, key="walkin_identity_type")
+            p_is_foreigner = "ต่างชาติ" in p_identity
+            _p_id_type = "foreigner" if p_is_foreigner else "thai"
             c_p1, c_p2 = st.columns(2)
             with c_p1:
-                p_name = st.text_input("ชื่อ - นามสกุล ผู้รับบริการ *", placeholder="ระบุชื่อและนามสกุล"); p_idcard = st.text_input("เลขประจำตัวประชาชน (13 หลัก) *", placeholder="xxxxxxxxxxxxx", max_chars=13)
-                if len(p_idcard.strip()) == 13:
-                    _v,_m = validate_thai_id_card(p_idcard)
-                    if _v: st.success("✅ เลขบัตรถูกต้อง")
+                p_name = st.text_input("ชื่อ - นามสกุล ผู้รับบริการ *", placeholder="ระบุชื่อและนามสกุล")
+                _p_label = "เลขหนังสือเดินทาง (Passport No.) *" if p_is_foreigner else "เลขประจำตัวประชาชน (13 หลัก) *"
+                _p_ph = "เช่น AB1234567" if p_is_foreigner else "xxxxxxxxxxxxx"
+                _p_max = 15 if p_is_foreigner else 13
+                p_idcard = st.text_input(_p_label, placeholder=_p_ph, max_chars=_p_max)
+                if len(p_idcard.strip()) >= 6:
+                    _v,_m = validate_identity(p_idcard, _p_id_type)
+                    if _v: st.success("✅ เลขถูกต้อง")
                     else: st.error(f"❌ {_m}")
             with c_p2:
                 p_phone = st.text_input("เบอร์โทรศัพท์ติดต่อ *", placeholder="08xxxxxxxx", max_chars=10); p_email = st.text_input("อีเมล (ไม่บังคับ - เว้นว่างได้)", placeholder="หากไม่มี ให้เว้นว่างไว้")
@@ -754,7 +790,7 @@ def show_admin_dashboard():
                 p_status = st.selectbox("สถานะการนัด", ["confirmed (ลงทะเบียนสำเร็จทันที)", "pending (รอยืนยัน)"], index=0); send_mail_chk = st.checkbox("ส่งอีเมลแจ้งเตือน (หากระบุอีเมล)", value=True)
             st.markdown("<br>", unsafe_allow_html=True); submit_walkin = st.button("💾 บันทึกการนัดหมาย", type="primary", use_container_width=True)
         if submit_walkin:
-            _v,_m = validate_thai_id_card(p_idcard)
+            _v,_m = validate_identity(p_idcard, _p_id_type)
             if not _v: st.error(f"❌ {_m}")
             elif not avail_slots or not p_slot: st.error(f"❌ ไม่สามารถจองวันที่เลือกได้: {s_msg}")
             elif not all([p_name.strip(), p_idcard.strip(), p_phone.strip()]): st.error("❌ กรุณากรอก ชื่อ-นามสกุล, เลขบัตรประชาชน และเบอร์โทรศัพท์ ให้ครบถ้วน")
